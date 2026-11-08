@@ -20,8 +20,13 @@
 | `GetJob(ctx, jobID string)` | `*Job, error` | Localizar Job por ID para consulta pontual |
 | `GetCommand(ctx, commandID string)` | `*Command, error` | Localizar Command por ID para consulta pontual |
 | `CancelAction(ctx, actionID string)` | `error` | Cancelar execução ativa no mesmo Engine |
+| `CreateProfile(ctx, req CreateProfileRequest)` | `*ProfileInfo, error` | Criar perfil no InsulaVM; **proposto, com dependências pendentes** |
 
 `RunFile` e `RunYAML` são bloqueantes; a aplicação pode usar goroutines. Se uma execução falhar **após criar o registro**, o retorno pode conter `*Action` não nulo **e** `error`, para preservar o UUID; erro antes da aceitação retorna Action nula. `Action` contém `ID`, `Status`, `StartedAt` e `FinishedAt` (se encerrada). `VMID` é um campo transitório somente no objeto retornado pela execução atual; `GetAction` recupera o histórico sem esse identificador, pois ele não está no SQLite.
+
+## Operação administrativa de perfil
+
+`Engine.CreateProfile(ctx, req)` prepara um perfil nomeado para uso posterior em `vm.profile`, por delegação à biblioteca InsulaVM; não pertence ao fluxo de `RunYAML`/`RunFile`. O contrato canônico é [CONTR-002](../../contratos/CONTR-002-criacao-perfil.md). Exige nome, fonte QCOW2 ou VM, RAM, CPUs e política de internet. O InsulaVM atual suporta registrar QCOW2, mas ainda não suporta rede por perfil nem clonagem **não destrutiva** de VM existente. Rejeitar solicitações que não possam ser atendidas fielmente.
 
 ## Navegação por objetos
 
@@ -98,6 +103,7 @@ for _, job := range jobs {
 ## Referências
 
 - [CONTR-001 — YAML](../../contratos/CONTR-001-configuracao-action.md)
+- [CONTR-002 — Criar perfil](../../contratos/CONTR-002-criacao-perfil.md)
 - [PERS-001 — SQLite](../../persistencia/PERS-001-registro-execucoes.md)
 - [FLUX-001 — Execução](../../fluxos/FLUX-001-execucao-action.md)
 - [INTF-TERM-001 — CLI local](../terminal/INTF-TERM-001-cli-testes.md)

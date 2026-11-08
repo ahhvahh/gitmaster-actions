@@ -19,7 +19,7 @@ Fornecer um **pacote Go importável** por outros projetos. Não executar como se
 | Parser/validador | Ler e validar manifesto, origem da VM e caminhos |
 | Orquestrador | Gerar UUIDs, registrar estados, executar jobs e comandos |
 | Repositório SQLite interno | Criar esquema, migrar e persistir Action, Jobs, Comandos, chunks e linhas indexadas |
-| Adaptador InsulaVM | Clonar perfil local QCOW2 preparado, iniciar/encerrar VM, transferir arquivos e executar comandos pela API pública |
+| Adaptador InsulaVM | Iniciar/encerrar VM, transferir arquivos, executar comandos e registrar perfil por métodos públicos; sem duplicar catálogo de perfis |
 | InsulaVM | Gerenciar QEMU/KVM/Libvirt, Cloud-Init e SSH |
 
 ```mermaid
@@ -46,14 +46,16 @@ flowchart LR
 8. Comandos do YAML não executam no host; a biblioteca delega a execução ao InsulaVM. Scripts administrativos de bootstrap não são aceitos do YAML não confiável.
 9. Cancelamento e erros não devem descartar logs parciais; encerrar a VM com contexto de cleanup independente.
 10. Logs incrementais usam cursor de linha persistido, preservando separadamente os chunks binários originais.
-11. O GitMaster Actions não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
-12. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
+11. `CreateProfile` é operação administrativa separada de `RunFile`/`RunYAML`: perfis residem no InsulaVM; rede por perfil e clonagem não destrutiva de VM existente estão pendentes e não podem ser simuladas silenciosamente.
+12. O GitMaster Actions não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
+13. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
 
 ## Documentos canônicos
 
 - [INTF-GO-001 — API pública](../interfaces/go/INTF-GO-001-biblioteca-publica.md)
 - [INTF-TERM-001 — CLI auxiliar](../interfaces/terminal/INTF-TERM-001-cli-testes.md)
 - [CONTR-001 — YAML](../contratos/CONTR-001-configuracao-action.md)
+- [CONTR-002 — Criar perfil](../contratos/CONTR-002-criacao-perfil.md)
 - [PERS-001 — Banco SQLite](../persistencia/PERS-001-registro-execucoes.md)
 - [FLUX-001 — Processamento](../fluxos/FLUX-001-execucao-action.md)
 - [API Go do InsulaVM](https://github.com/ahhvahh/InsulaVM/blob/main/docs/arquitetura/ARQ-004-biblioteca-go.md)

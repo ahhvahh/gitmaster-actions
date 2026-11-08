@@ -6,6 +6,10 @@ Biblioteca Go para executar Actions em **VMs locais clonadas de perfis QCOW2 já
 
 A aplicação consumidora fornece o YAML em memória (`RunYAML`) ou o caminho do manifesto (`RunFile`). A biblioteca gera os UUIDs e administra integralmente seu banco de dados. As consultas navegam por `Action.Jobs(ctx)`, `Job.Commands(ctx)` e `Command.Logs(ctx, skipLines...)`, permitindo buscar somente linhas ainda não recebidas.
 
+## Criação de perfis
+
+Foi definido o método administrativo **proposto** `Engine.CreateProfile(ctx, req)`, que delegará ao InsulaVM a criação de um perfil nomeado a partir de QCOW2 preparado ou VM existente, com RAM, CPUs e permissão de internet. `RegisterProfile` já existe para imagens QCOW2; a escolha de rede por perfil e clonagem de VM sem remover a origem **ainda precisam ser implementadas no InsulaVM**. O método não altera o modelo SQLite de Actions. Ver [CONTR-002](docs/contratos/CONTR-002-criacao-perfil.md).
+
 ## CLI auxiliar de testes
 
 O projeto **também terá** o executável opcional `gitmaster-actions` para execução e inspeção local. Essa CLI será apenas um adaptador sobre a mesma API Go: **não é serviço, daemon, runner GitHub Actions nem outra implementação do executor**.
@@ -13,6 +17,7 @@ O projeto **também terá** o executável opcional `gitmaster-actions` para exec
 Exemplos previstos, **ainda não executáveis**:
 
 ```bash
+gitmaster-actions profiles create --name debian13-mysql --source-qcow2 /srv/images/debian13-mysql.qcow2 --memory-mib 4096 --vcpus 2 --internet no --db ./actions.db --insula-config ./insula-config.yaml
 gitmaster-actions run --file ./action.yaml --db ./actions.db --insula-config ./insula-config.yaml
 gitmaster-actions actions list --db ./actions.db
 gitmaster-actions jobs list --action-id "$ACTION_ID" --db ./actions.db

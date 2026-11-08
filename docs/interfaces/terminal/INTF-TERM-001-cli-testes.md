@@ -23,8 +23,11 @@ gitmaster-actions commands list --job-id UUID --db CAMINHO [--json]
 gitmaster-actions commands get --id UUID --db CAMINHO [--json]
 gitmaster-actions logs list --command-id UUID --db CAMINHO [--skip-lines N] [--format text|json]
 gitmaster-actions outputs list --command-id UUID --db CAMINHO [--stream stdin|stdout|stderr] [--format text|json|raw]
+gitmaster-actions profiles create --name NOME (--source-qcow2 CAMINHO | --source-vm UUID) --memory-mib MiB --vcpus N --internet yes|no --db CAMINHO --insula-config CAMINHO [--json]
 gitmaster-actions --help
 ```
+
+`profiles create` é interface **proposta**, exclusivamente para testar o novo método `CreateProfile`. Exige somente uma origem de disco e escolha explícita `--internet yes|no`. `--source-vm` dependerá de clonagem não destrutiva; `--internet` depende de rede por perfil no InsulaVM. Não ignorar flags sem suporte. Contrato: [CONTR-002](../../contratos/CONTR-002-criacao-perfil.md).
 
 `--skip-lines N` aceita um inteiro não negativo (padrão 0) e solicita apenas linhas com número maior que N. `logs list` retorna no máximo 500 linhas e usa `LineNumber` para a próxima consulta; `outputs list` permanece distinto para chunks brutos.
 
@@ -36,6 +39,7 @@ A CLI é invocada por processo **no mesmo host que executa InsulaVM**: cada coma
 
 | Comando | Operação única da biblioteca | Entrada relevante | Saída |
 | --- | --- | --- | --- |
+| `profiles create` | `CreateProfile` | Nome, fonte QCOW2/VM, recursos e internet | Perfil criado ou erro explícito |
 | `run --file` | `RunFile` | Arquivo YAML, `Options` | ID, estado, ID da VM, erro ou resumo |
 | `run --stdin` | `RunYAML` | Bytes do stdin, `Options` | Mesmo resultado da execução por arquivo |
 | `actions list/get` | `ListActions` / `GetAction` | Filtros ou UUID | Ações e estados |
@@ -71,6 +75,9 @@ Saídas de erro não devem fabricar `action_id`, `job_id`, `vm_id` ou resultados
 ## Casos de uso propostos (não executáveis atualmente)
 
 ```bash
+# Registrar perfil de imagem preparada (a política de rede ainda requer implementação)
+gitmaster-actions profiles create --name debian13-mysql --source-qcow2 /srv/images/debian13-mysql.qcow2 --memory-mib 4096 --vcpus 2 --internet no --db ./actions.db --insula-config ./insula-config.yaml
+
 # Executar manifesto usando um perfil InsulaVM definido no próprio YAML
 gitmaster-actions run --file ./action.yaml --db ./actions.db --insula-config ./insula-config.yaml
 
@@ -103,5 +110,6 @@ Os UUIDs acima são **exemplos ilustrativos**, não registros encontrados no SQL
 
 - [INTF-GO-001 — Biblioteca pública](../go/INTF-GO-001-biblioteca-publica.md)
 - [CONTR-001 — Entrada YAML](../../contratos/CONTR-001-configuracao-action.md)
+- [CONTR-002 — Criar perfil](../../contratos/CONTR-002-criacao-perfil.md)
 - [PERS-001 — Persistência](../../persistencia/PERS-001-registro-execucoes.md)
 - [FLUX-001 — Execução](../../fluxos/FLUX-001-execucao-action.md)
