@@ -7,9 +7,9 @@
 
 ## Objetivo
 
-O GitMaster Actions é proprietário do SQLite: abre, cria/migra tabelas e escreve internamente. O projeto consumidor acessa os registros exclusivamente pela API de leitura [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). `config_path` é nulo quando o YAML é recebido em memória; `config_sha256` é sempre calculado sobre o conteúdo recebido.
+O GitMaster Actions administra o SQLite e disponibiliza consultas somente pelos objetos da API [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). O histórico guarda os estados e logs da execução, **não** a origem/configuração da VM, repositório, caminho ou hash do YAML.
 
-Persistir localmente a cadeia **Action → job → comando → evento bruto de STDIO**, mais uma projeção persistida por linha para consulta incremental. O identificador da Action e o de cada job devem ser **UUIDv7 distintos**. Cada comando recebe UUIDv7 para correlação; cada chunk de stream recebe um inteiro autoincremental. O UUID da VM pertence ao InsulaVM e não substitui o UUID da Action.
+Persistir localmente a cadeia **Action → job → comando → evento bruto de STDIO**, mais uma projeção persistida por linha para consulta incremental. O identificador da Action e o de cada job devem ser **UUIDv7 distintos**. Cada comando recebe UUIDv7 para correlação; cada chunk de stream recebe um inteiro autoincremental. O UUID da VM pertence ao InsulaVM e é mantido apenas durante a execução no GitMaster Actions, sem coluna no banco desta biblioteca.
 
 ## Modelo de relacionamento
 
@@ -21,7 +21,6 @@ erDiagram
     commands ||--o{ command_log_lines : indexa
     actions {
         TEXT id PK
-        TEXT vm_id
         TEXT name
         TEXT status
         TEXT created_at
@@ -67,12 +66,6 @@ PRAGMA busy_timeout = 5000;
 CREATE TABLE actions (
     id           TEXT PRIMARY KEY NOT NULL,
     name         TEXT NOT NULL,
-    repository   TEXT NOT NULL,
-    config_path  TEXT,
-    config_sha256 TEXT NOT NULL,
-    vm_source_type TEXT NOT NULL CHECK (vm_source_type IN ('profile','iso')),
-    vm_source_value TEXT NOT NULL,
-    vm_id        TEXT,
     status       TEXT NOT NULL CHECK (status IN
                  ('pending','starting','running','succeeded','failed','cancelled')),
     created_at   TEXT NOT NULL,
@@ -84,7 +77,6 @@ CREATE TABLE actions (
 CREATE TABLE jobs (
     id            TEXT PRIMARY KEY NOT NULL,
     action_id     TEXT NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
-    pipeline_name TEXT NOT NULL,
     name          TEXT NOT NULL,
     position      INTEGER NOT NULL CHECK (position >= 0),
     allow_failure INTEGER NOT NULL DEFAULT 0 CHECK (allow_failure IN (0,1)),
@@ -143,13 +135,13 @@ A instrução `PRAGMA foreign_keys = ON` precisa ser aplicada **em cada conexão
 
 | Tabela | Identificador | Vinculação | Conteúdo |
 | --- | --- | --- | --- |
-| `actions` | `id` UUIDv7 | Raiz | Origem perfil/ISO, nome, hash do arquivo recebido, VMID, estado e erro geral |
-| `jobs` | `id` UUIDv7 | `action_id` | Uma linha por job/log; pipeline, nome, ordem, `allow_failure`, início/fim |
+| `actions` | `id` UUIDv7 | Raiz | Nome, status, datas de início/fim e erro geral, sem configuração da VM |
+| `jobs` | `id` UUIDv7 | `action_id` | Nome, ordem, `allow_failure`, status, início/fim e mensagem de erro |
 | `commands` | `id` UUIDv7 | `job_id` | Uma linha por comando; texto, posição, exit code, erro e estado |
 | `command_outputs` | `id` INTEGER | `command_id` | Um registro por chunk recebido/enviado, tipo e bytes exatos |
 | `command_log_lines` | `(command_id, line_no)` | `command_id` | Uma linha completa (ou fragmento final), com cursor estável |
 
-O hash SHA-256 permite identificar o conteúdo exato do manifesto recebido; o caminho registra a origem, não substitui o hash. `vm_id` é nulo até a criação da VM; continua preenchido no histórico após o encerramento da VM.
+O SQLite **não** registra YAML, repositório, origem do perfil, RAM/vCPU ou VMID. O VMID transita apenas em memória no retorno da execução. Não há mecanismo para recuperar ou retomar VMs após queda/reinício; um registro `running` pode refletir o último estado conhecido, não uma VM ainda ativa.
 
 ## Eventos de I/O e integridade
 
@@ -196,7 +188,7 @@ Em `allow_failure=true`, um comando pode estar `failed` e o job ser `succeeded` 
 
 ```sql
 -- Listar jobs de uma Action por ordem
-SELECT id, pipeline_name, name, status
+SELECT id, name, status
 FROM jobs WHERE action_id = ? ORDER BY position;
 
 -- Reconstruir stdout de um comando, concatenando BLOBs na ordem
@@ -210,7 +202,7 @@ A aplicação que consulta deve concatenar os BLOBs no cliente (não supor que `
 
 ## Critérios de aceite futuros
 
-- Uma Action produz UUIDv7 próprio e um VMID distinto quando criada VM.
+- Uma Action produz UUIDv7 próprio; VMID, quando criado, pertence ao InsulaVM e não é persistido no banco da Action.
 - Cada job recebe UUIDv7 único e pertence exatamente a uma Action.
 - Cada comando pertence exatamente a um job; cada chunk e cada linha pertence exatamente a um comando.
 - Após solicitar `skipLines=N`, nenhuma linha de número até N pode ser devolvida novamente.

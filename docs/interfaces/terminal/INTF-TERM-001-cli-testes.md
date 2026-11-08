@@ -9,7 +9,7 @@
 
 Fornecer o executável opcional `gitmaster-actions` (diretório Go previsto: `cmd/gitmaster-actions`) para testar a biblioteca localmente, executar manifestos YAML e inspecionar o SQLite por **métodos públicos da biblioteca**. A CLI **não é serviço, daemon ou runner GitHub Actions**; não cria schema, não escreve SQL, não controla VM por fora da biblioteca e não reimplementa o parser.
 
-As entradas de execução são mutuamente exclusivas: `--file CAMINHO` ou `--stdin` (YAML lido em bytes). Um dos dois é obrigatório em `run`. A CLI não oferece `--iso` ou `--profile`, porque a origem pertence ao manifesto [CONTR-001](../../contratos/CONTR-001-configuracao-action.md).
+As entradas de execução são mutuamente exclusivas: `--file CAMINHO` ou `--stdin` (YAML lido em bytes). Um dos dois é obrigatório em `run`. A CLI não oferece flags para escolher a VM: o manifesto [CONTR-001](../../contratos/CONTR-001-configuracao-action.md) exige `vm.profile` já preparado no InsulaVM local, e memória/CPUs são opcionais.
 
 ## Sintaxe proposta
 
@@ -30,7 +30,7 @@ gitmaster-actions --help
 
 `--db` é o caminho do SQLite administrado pela biblioteca. `--insula-config` informa a configuração administrativa InsulaVM **somente** para execução. O formato humano é padrão para listagens; `--json` oferece registros estruturados. `outputs list --format raw` escreve exatamente os bytes `payload`, sem cabeçalhos, conversão, decoração ou alteração de quebra de linha. Em `--format text`, os bytes são exibidos para inspeção, e dados binários podem não ser legíveis.
 
-A CLI é invocada por processo: cada comando inicializa um `Engine`, chama a API e libera recursos. Consultas ao banco não devem carregar InsulaVM/Libvirt; execução e cancelamento usam contexto do processo.
+A CLI é invocada por processo **no mesmo host que executa InsulaVM**: cada comando inicializa um `Engine`, chama a API e libera recursos. Consultas ao banco não carregam VM/Libvirt; execução e cancelamento usam contexto do processo. Não há recuperação de VMs após queda/reinício; `running` persistido pode ser apenas o último estado conhecido.
 
 ## Mapeamento de métodos
 

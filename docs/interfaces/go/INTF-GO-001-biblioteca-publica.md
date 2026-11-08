@@ -21,7 +21,7 @@
 | `GetCommand(ctx, commandID string)` | `*Command, error` | Localizar Command por ID para consulta pontual |
 | `CancelAction(ctx, actionID string)` | `error` | Cancelar execução ativa no mesmo Engine |
 
-`RunFile` e `RunYAML` são bloqueantes; a aplicação pode usar goroutines. Se uma execução falhar **após criar o registro**, o retorno pode conter `*Action` não nulo **e** `error`, para preservar o UUID; erro antes da aceitação retorna Action nula. `Action` contém `ID`, `VMID` (se criado), `Status`, `StartedAt` e `FinishedAt` (se encerrada).
+`RunFile` e `RunYAML` são bloqueantes; a aplicação pode usar goroutines. Se uma execução falhar **após criar o registro**, o retorno pode conter `*Action` não nulo **e** `error`, para preservar o UUID; erro antes da aceitação retorna Action nula. `Action` contém `ID`, `Status`, `StartedAt` e `FinishedAt` (se encerrada). `VMID` é um campo transitório somente no objeto retornado pela execução atual; `GetAction` recupera o histórico sem esse identificador, pois ele não está no SQLite.
 
 ## Navegação por objetos
 
@@ -87,10 +87,12 @@ for _, job := range jobs {
 - A biblioteca gera e persiste UUIDv7 para Action, Job e Comando; o UUID da VM é fornecido pelo InsulaVM.
 - A CLI chama os mesmos métodos públicos; não usa acesso direto ao SQLite e não possui parser, gerador de IDs nem orquestrador paralelos.
 - `RunFile` resolve caminhos de importação relativos à pasta do manifesto; `RunYAML` não possui diretório-base e exige caminhos de importação absolutos.
-- Validar YAML e origem da VM antes da criação do registro. Após aceitação, gravar Action e Jobs antes de iniciar VM; gravar cada comando antes da execução.
+- Validar YAML, perfil local preparado e `action.jobs` antes da criação do registro. Após aceitação, gravar Action e Jobs antes de iniciar VM; gravar cada comando antes da execução.
 - Cada chamada de consulta deve aceitar `context.Context` e propagar erros tipados de ID inválido, não encontrado e banco indisponível.
 - Não expor `*sql.DB` nem criar métodos redundantes de persistência. O acesso SQLite é interno à biblioteca.
 - Linhas indexadas são uma projeção persistida dos streams brutos para paginação eficiente por número. A biblioteca preserva ambos.
+- A Action contém Jobs diretamente, sem pipelines; somente `vm.profile` é aceito. Memória e CPUs são opcionais e usam os valores do perfil por padrão.
+- O banco da Action não guarda repositório, origem/hash do YAML nem dados da VM. Não há retomada após queda/reinício do servidor.
 - Logs em tempo real dependem da futura API InsulaVM com streams independentes; não apresentar como funcionalidade já disponível.
 
 ## Referências

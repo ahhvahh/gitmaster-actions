@@ -14,4 +14,4 @@
 | [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Tabelas, IDs, índices, relacionamentos |
 | [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Ordem, falhas, cancelamento e cleanup |
 
-**Dependências ainda pendentes no InsulaVM:** instalação por ISO (`CreateProfileFromISO`) e STDIO separado com exit code (`ExecuteCommand`). Perfil QCOW2 e criação de VM já possuem APIs Go. O GitMaster Actions administra o próprio banco SQLite, sem expor SQL ao consumidor.
+**Ambiente:** uma Action usa uma VM clonada de perfil existente no InsulaVM local; os Jobs pertencem diretamente à Action. O banco SQLite não armazena dados da VM e não há recuperação após queda/reinício do servidor. **Dependência pendente:** STDIO separado com exit code (`ExecuteCommand`) no InsulaVM.

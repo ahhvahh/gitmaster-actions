@@ -19,7 +19,7 @@ Fornecer um **pacote Go importável** por outros projetos. Não executar como se
 | Parser/validador | Ler e validar manifesto, origem da VM e caminhos |
 | Orquestrador | Gerar UUIDs, registrar estados, executar jobs e comandos |
 | Repositório SQLite interno | Criar esquema, migrar e persistir Action, Jobs, Comandos, chunks e linhas indexadas |
-| Adaptador InsulaVM | Criar/encerrar VM, transferir arquivos e executar comandos usando API pública |
+| Adaptador InsulaVM | Clonar perfil local QCOW2 preparado, iniciar/encerrar VM, transferir arquivos e executar comandos pela API pública |
 | InsulaVM | Gerenciar QEMU/KVM/Libvirt, Cloud-Init e SSH |
 
 ```mermaid
@@ -36,17 +36,18 @@ flowchart LR
 
 ## Invariantes
 
-1. Cada Action, Job e Comando tem UUIDv7 próprio; `vm_id` é atribuído pelo InsulaVM.
-2. Uma VM por Action; jobs e comandos executados sequencialmente no primeiro ciclo, com sessão remota nova por comando.
+1. Cada Action, Job e Comando tem UUIDv7 próprio; o VMID é atribuído pelo InsulaVM e utilizado em memória, sem persistência na Action.
+2. Uma VM local clonada de perfil existente por Action. Jobs são filhos diretos da Action (não há pipelines); jobs e comandos executam em sequência, com nova sessão remota por comando.
 3. `actions.db` pertence ao GitMaster Actions; `insula.db` pertence ao InsulaVM. Não escrever diretamente no banco do InsulaVM.
 4. A biblioteca é a única responsável por gravações e migrações de `actions.db`; consumidores, inclusive a CLI, usam métodos de leitura e execução. Consultas não dependem da inicialização de VM.
 5. O YAML não pode escolher o caminho do banco nem o arquivo global InsulaVM; são opções administrativas de `New`.
-6. Perfil QCOW2 é suportado pela biblioteca InsulaVM existente; ISO instaladora depende de `CreateProfileFromISO`, ainda pendente.
+6. O manifesto exige perfil QCOW2 já preparado no InsulaVM do mesmo host. O perfil define memória e CPUs; sobrescritas opcionais valem apenas para a instância.
 7. STDIN/STDOUT/STDERR separados e exit code estruturado dependem de `ExecuteCommand`, ainda pendente no InsulaVM. Não simular separação com saída combinada.
 8. Comandos do YAML não executam no host; a biblioteca delega a execução ao InsulaVM. Scripts administrativos de bootstrap não são aceitos do YAML não confiável.
 9. Cancelamento e erros não devem descartar logs parciais; encerrar a VM com contexto de cleanup independente.
 10. Logs incrementais usam cursor de linha persistido, preservando separadamente os chunks binários originais.
-11. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
+11. O GitMaster Actions não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
+12. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
 
 ## Documentos canônicos
 

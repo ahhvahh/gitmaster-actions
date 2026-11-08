@@ -7,88 +7,81 @@
 
 ## Objetivo
 
-Receber YAML em memória ou caminho de arquivo local YAML e definir o trabalho que deve rodar em **uma VM**. A origem da VM deve ser um perfil InsulaVM **ou** uma ISO local, nunca ambas. Até o InsulaVM suportar instalação por ISO, esse segundo modo deve falhar com erro explícito antes de reservar uma VM.
+Uma **Action** é uma execução de **uma VM local clonada a partir de um perfil InsulaVM já preparado**, no mesmo host do processo da biblioteca/CLI. Só é permitido `vm.profile`; memória e vCPUs são parâmetros opcionais e, quando omitidos, são herdados do perfil existente. Jobs são filhos diretos de `action`; não existe Pipeline.
 
-## Exemplo de manifesto proposto (`action.yaml`)
+## Exemplo proposto (`action.yaml`)
 
 ```yaml
 schema_version: 1
+
 vm:
   profile: debian13-go
-  # iso: /srv/isos/debian-13.iso  # alternativa futura, NÃO funcional hoje
-  memory_mib: 2048
-  vcpus: 2
+  # memory_mib: 2048  # opcional: omissão mantém o valor do perfil
+  # vcpus: 2          # opcional: omissão mantém o valor do perfil
 
 action:
-  name: testes
-  repository: projeto-exemplo
+  name: build
   imports:
     - source: /srv/bundles/projeto.tar.gz
-  pipelines:
-    - name: validar
-      jobs:
-        - name: compilar
-          commands:
-            - "go version"
-            - "go build ./..."
-          allow_failure: false
-        - name: testes
-          commands:
-            - "go test ./..."
-          allow_failure: false
+  jobs:
+    - name: compilar
+      commands:
+        - "go version"
+        - "go build ./..."
+      allow_failure: false
+    - name: testar
+      commands:
+        - "go test ./..."
+      allow_failure: false
 
 logging:
   capture_stdin: false
 ```
 
-Este exemplo é **ilustrativo**: seu layout é um contrato do GitMaster Actions a desenvolver, não um manifesto `insula.yaml` aceito diretamente pelo parser InsulaVM. O adaptador deve traduzir a estrutura validada para operações públicas da biblioteca, sem duplicar seus mecanismos de VM ou SSH.
+**Exemplo ilustrativo, ainda não executável**: este contrato é específico do GitMaster Actions; o adaptador usa a biblioteca Go InsulaVM, não passa este YAML diretamente ao parser do InsulaVM.
+
 
 ## Campos
 
 | Campo | Tipo | Regra |
 | --- | --- | --- |
-| `schema_version` | inteiro | Obrigatório; nesta proposta, `1` |
-| `vm.profile` | string | Nome de perfil QCOW2 registrado no InsulaVM; exclusivo de `vm.iso` |
-| `vm.iso` | string | Caminho absoluto de ISO instaladora; exclusivo de `vm.profile`; modo ainda bloqueado |
-| `vm.memory_mib` | inteiro | Opcional; `0`/omissão mantém padrão do perfil; não negativo |
-| `vm.vcpus` | inteiro | Opcional; `0`/omissão mantém padrão do perfil; não negativo |
-| `action.name` | string | Nome lógico obrigatório da Action |
-| `action.repository` | string | Referência textual obrigatória do projeto executado |
-| `action.imports[].source` | string | Caminho local de arquivo/diretório confiável; opcional; extração ocorre segundo a API InsulaVM vigente |
-| `action.pipelines[].name` | string | Nome de pipeline; obrigatório, sem duplicatas no mesmo manifesto |
-| `action.pipelines[].jobs[].name` | string | Nome de job; obrigatório, único na Action |
-| `action.pipelines[].jobs[].commands[]` | lista de strings | Comandos shell não vazios; ao menos um comando por job |
-| `action.pipelines[].jobs[].allow_failure` | booleano | Opcional, padrão `false`; tolera **exit code remoto não zero** daquele job, não falhas de infraestrutura |
-| `logging.capture_stdin` | booleano | Opcional; padrão `false`, pois stdin pode conter dados sensíveis |
+| `schema_version` | inteiro | Obrigatório; versão proposta `1` |
+| `vm.profile` | string | Obrigatório; perfil QCOW2 previamente cadastrado no InsulaVM local |
+| `vm.memory_mib` | inteiro | Opcional; omissão ou `0` usa RAM do perfil; valores positivos sobrescrevem apenas a instância |
+| `vm.vcpus` | inteiro | Opcional; omissão ou `0` usa vCPUs do perfil; valores positivos sobrescrevem apenas a instância |
+| `action.name` | string | Nome da Action, obrigatório |
+| `action.imports[].source` | string | Origem de arquivo/diretório confiável, opcional |
+| `action.jobs[].name` | string | Nome obrigatório e único dentro da Action |
+| `action.jobs[].commands[]` | lista de strings | Um ou mais comandos shell não vazios, executados na VM |
+| `action.jobs[].allow_failure` | booleano | Opcional, padrão `false`; tolera exit code remoto não zero, não falhas de infraestrutura |
+| `logging.capture_stdin` | booleano | Opcional, padrão `false` para proteger dados sensíveis |
 
-**Entradas administrativas separadas:** `InsulaConfigPath` e `DatabasePath` são definidos pelo projeto consumidor ao chamar `New(Options)`, nunca pelo manifesto.
+Configuração administrativa do banco (`DatabasePath`) e do InsulaVM (`InsulaConfigPath`) é informada ao `New(Options)` pelo consumidor, nunca por este YAML. O YAML não inclui repositório, pipeline, ISO ou identificadores internos.
+
 
 ## Validação proposta
 
-1. YAML legível; apenas um documento; rejeitar chaves desconhecidas e versões não reconhecidas.
-2. Exatamente uma origem dentre `vm.profile`, `vm.iso` (definida no YAML). Mesmo pela CLI de testes, não existem flags para sobrescrever a origem da VM; a fonte é o próprio YAML.
-3. Validar nomes e caminhos, evitar traversal, verificar permissões locais e não aceitar interpolação automática de segredos/variáveis de ambiente.
-4. Se `vm.iso` for selecionado antes de `CreateProfileFromISO` existir, retornar `ISO_NOT_SUPPORTED`, sem criar Action operacional ou iniciar VM. Pode registrar uma tentativa inválida somente se política futura decidir rastrear rejeições.
-5. Ao menos uma pipeline e um job; comandos executados na ordem declarada. Não interpretar comandos do YAML como argumentos locais do shell hospedeiro.
-6. Por padrão, cada comando abre sessão remota independente; alterações de `cd` e `export` não persistem entre comandos. O diretório inicial padrão é `guest.destination` do InsulaVM.
+1. Aceitar um único documento YAML e rejeitar campos desconhecidos e `schema_version` inválida.
+2. Exigir perfil existente no InsulaVM **do mesmo host**; nenhuma outra origem de VM ou modo remoto é aceito.
+3. Memória e vCPUs ausentes ou iguais a zero mantêm os recursos definidos no perfil; valores positivos valem só para a nova VM e não modificam o perfil.
+4. Exigir `action.name`, pelo menos um `action.jobs[]`, nomes únicos e pelo menos um comando em cada Job.
+5. Validar imports: `RunFile` resolve caminhos relativos a partir do diretório do arquivo; `RunYAML` exige caminhos absolutos.
+6. Executar Jobs e comandos na ordem declarada, na **mesma VM**. Cada comando usa uma sessão SSH independente; `cd` e `export` não persistem entre comandos. Comandos nunca são executados no host.
+7. Não interpolar segredos automaticamente nem aceitar caminhos de bootstrap administrativo fornecidos pelo manifesto.
+
 
 ## Resultado lógico proposto
 
-| Campo | Descrição |
-| --- | --- |
-| `action_id` | UUIDv7 da Action, gerado pelo GitMaster Actions |
-| `vm_id` | UUIDv7 gerado pelo InsulaVM, se a VM tiver sido criada |
-| `status` | `pending`, `starting`, `running`, `succeeded`, `failed` ou `cancelled` |
-| `started_at`, `finished_at` | Instantes em UTC; término nulo enquanto não finalizado |
-| `job_count`, `failed_job_count` | Totais derivados dos registros de jobs |
+`RunFile` e `RunYAML` retornam `*Action, error` conforme [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). O `Action.ID` é UUIDv7; os campos `Status`, `StartedAt` e `FinishedAt` são persistidos. `VMID` é **transitório** e só existe no objeto retornado pela execução atual, quando disponível: não é gravado na tabela `actions`.
 
-Um processo remoto terminando com exit code não zero é diferente de uma falha SSH/Libvirt. Consulte as definições de status em [PERS-001](../persistencia/PERS-001-registro-execucoes.md) e o processamento em [FLUX-001](../fluxos/FLUX-001-execucao-action.md).
+A execução não realiza recuperação ou retomada de VM após queda/reinício do processo ou servidor; o último status persistido pode estar desatualizado. Ver [FLUX-001](../fluxos/FLUX-001-execucao-action.md).
+
 
 ## Acesso e erros
 
 - Apenas um projeto consumidor autorizado pode fornecer YAML e caminhos de importação.
 - O conteúdo dos comandos será executado no guest. Arquivos de origem, configuração, stdout e stderr podem conter segredos; proteger o banco SQLite e aplicar política de retenção antes de usar em produção.
-- Erros previstos: arquivo ausente/inacessível, YAML inválido, origem ambígua, perfil inexistente, ISO não suportada, configuração InsulaVM inválida e falha de inicialização.
+- Erros previstos: arquivo ausente/inacessível, YAML inválido, perfil inexistente, configuração InsulaVM inválida, falha de clonagem/inicialização ou falha de infraestrutura.
 
 ## Referências
 
