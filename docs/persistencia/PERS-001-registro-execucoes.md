@@ -9,7 +9,7 @@
 
 O GitMaster Actions é proprietário do SQLite: abre, cria/migra tabelas e escreve internamente. O projeto consumidor acessa os registros exclusivamente pela API de leitura [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). `config_path` é nulo quando o YAML é recebido em memória; `config_sha256` é sempre calculado sobre o conteúdo recebido.
 
-Persistir localmente a cadeia **Action → job (log do job) → comando → evento de STDIO**. O identificador da Action e o de cada job devem ser **UUIDv7 distintos**. Cada comando recebe UUIDv7 para correlação; cada chunk de stream recebe um inteiro autoincremental. O UUID da VM pertence ao InsulaVM e não substitui o UUID da Action.
+Persistir localmente a cadeia **Action → job → comando → evento bruto de STDIO**, mais uma projeção persistida por linha para consulta incremental. O identificador da Action e o de cada job devem ser **UUIDv7 distintos**. Cada comando recebe UUIDv7 para correlação; cada chunk de stream recebe um inteiro autoincremental. O UUID da VM pertence ao InsulaVM e não substitui o UUID da Action.
 
 ## Modelo de relacionamento
 
@@ -18,6 +18,7 @@ erDiagram
     actions ||--o{ jobs : contem
     jobs ||--o{ commands : executa
     commands ||--o{ command_outputs : produz
+    commands ||--o{ command_log_lines : indexa
     actions {
         TEXT id PK
         TEXT vm_id
@@ -46,9 +47,15 @@ erDiagram
         TEXT stream_type
         BLOB payload
     }
+    command_log_lines {
+        TEXT command_id PK, FK
+        INTEGER line_no PK
+        TEXT stream_type
+        BLOB payload
+    }
 ```
 
-`jobs` guarda o cabeçalho e o estado do **log de execução de cada job**. A tabela `commands` guarda cada comando enviado à VM, e `command_outputs` guarda os bytes lidos ou escritos. Não é necessária uma quinta tabela `logs` duplicando os dados do job.
+`jobs` guarda o cabeçalho e o estado do **log de execução de cada job**. A tabela `commands` guarda cada comando enviado à VM, e `command_outputs` guarda os bytes lidos ou escritos. A quinta tabela `command_log_lines` mantém uma projeção por linha de comando para consultas incrementais; `command_outputs` conserva os bytes brutos e pode ser reconstruída sem perda.
 
 ## DDL proposto — SQLite
 
@@ -115,6 +122,15 @@ CREATE TABLE command_outputs (
     UNIQUE (command_id, sequence_no)
 );
 
+CREATE TABLE command_log_lines (
+    command_id   TEXT NOT NULL REFERENCES commands(id) ON DELETE RESTRICT,
+    line_no      INTEGER NOT NULL CHECK (line_no >= 1),
+    stream_type  TEXT NOT NULL CHECK (stream_type IN ('stdin','stdout','stderr')),
+    payload      BLOB NOT NULL,
+    captured_at  TEXT NOT NULL,
+    PRIMARY KEY (command_id, line_no)
+);
+
 CREATE INDEX idx_jobs_action_id ON jobs(action_id);
 CREATE INDEX idx_commands_job_id ON commands(job_id);
 CREATE INDEX idx_command_outputs_command_id ON command_outputs(command_id, sequence_no);
@@ -131,6 +147,7 @@ A instrução `PRAGMA foreign_keys = ON` precisa ser aplicada **em cada conexão
 | `jobs` | `id` UUIDv7 | `action_id` | Uma linha por job/log; pipeline, nome, ordem, `allow_failure`, início/fim |
 | `commands` | `id` UUIDv7 | `job_id` | Uma linha por comando; texto, posição, exit code, erro e estado |
 | `command_outputs` | `id` INTEGER | `command_id` | Um registro por chunk recebido/enviado, tipo e bytes exatos |
+| `command_log_lines` | `(command_id, line_no)` | `command_id` | Uma linha completa (ou fragmento final), com cursor estável |
 
 O hash SHA-256 permite identificar o conteúdo exato do manifesto recebido; o caminho registra a origem, não substitui o hash. `vm_id` é nulo até a criação da VM; continua preenchido no histórico após o encerramento da VM.
 
@@ -146,6 +163,24 @@ O hash SHA-256 permite identificar o conteúdo exato do manifesto recebido; o ca
 - Recomenda-se transação para criar a Action e seus jobs inicialmente; depois, gravar comandos e chunks incrementalmente para não perder todo o log ao ocorrer falha no meio da execução.
 - Falha em persistir chunks deve impedir declaração de sucesso; tentar registrar erro de armazenamento e encerrar o processamento com falha. Se o banco estiver indisponível, relatar a impossibilidade de registrar o estado, **sem fabricar logs**.
 - Não salvar credenciais, chaves SSH ou tokens em metadados. Os próprios comandos/streams podem expor segredos: definir acesso por UID/grupo, arquivo com permissão restrita, retenção e política de captura antes da produção.
+
+## Consulta incremental por linha
+
+O gravador recompõe linhas **separadamente por stream** a partir dos chunks; uma linha pode atravessar chunks. Ao observar LF (`0x0A`), persiste a linha incluindo esse byte, atribuindo um `line_no` global crescente por comando. Ao encerrar ou cancelar a execução, persiste também bytes finais sem LF. Antes disso, uma linha incompleta pode não estar visível. A ordem entre streams indica a captura no host, não causalidade garantida na VM.
+
+Os chunks brutos e as linhas derivadas devem ser persistidos de modo consistente por lote antes de divulgar um cursor. A retenção não deve remover linhas de uma Action ainda ativa, evitando lacunas na leitura incremental. A duplicação controlada de armazenamento é intencional: recuperação binária versus navegação por linha.
+
+`Command.Logs(ctx, skipLines)` retorna **no máximo 500 linhas** de número maior que `skipLines`. O valor `0` retorna a primeira página. `skipLines` é cursor lógico, **não** SQL `OFFSET`, para não percorrer as linhas anteriores. Sem linhas novas, retornar lista vazia.
+
+```sql
+SELECT line_no, stream_type, payload, captured_at
+FROM command_log_lines
+WHERE command_id = ? AND line_no > ?
+ORDER BY line_no ASC
+LIMIT 500;
+```
+
+Assinatura e campos de retorno: [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md).
 
 ## Estados
 
@@ -177,7 +212,8 @@ A aplicação que consulta deve concatenar os BLOBs no cliente (não supor que `
 
 - Uma Action produz UUIDv7 próprio e um VMID distinto quando criada VM.
 - Cada job recebe UUIDv7 único e pertence exatamente a uma Action.
-- Cada comando pertence exatamente a um job; cada chunk pertence exatamente a um comando.
+- Cada comando pertence exatamente a um job; cada chunk e cada linha pertence exatamente a um comando.
+- Após solicitar `skipLines=N`, nenhuma linha de número até N pode ser devolvida novamente.
 - Constraints impedem referências órfãs; a aplicação ativa foreign keys em todas as conexões.
 - Bytes de STDOUT/STDERR são reconstruídos exatamente e preservam ordem individual dos canais.
 - O histórico não desaparece quando a VM é encerrada ou o processo termina.

@@ -15,10 +15,10 @@ Fornecer um **pacote Go importável** por outros projetos. Não executar como se
 | --- | --- |
 | Projeto consumidor | Chamar a biblioteca, fornecer YAML ou caminho, controlar contexto |
 | CLI auxiliar (`cmd/gitmaster-actions`) | Traduzir argumentos, arquivos/stdin e formatos de saída para chamadas da API pública, sem lógica de execução ou SQL |
-| API Go GitMaster Actions | Métodos de execução e leitura, sem SQL exposto |
+| API Go GitMaster Actions | Execução e navegação `Action.Jobs → Job.Commands → Command.Logs/Outputs`, sem SQL exposto |
 | Parser/validador | Ler e validar manifesto, origem da VM e caminhos |
 | Orquestrador | Gerar UUIDs, registrar estados, executar jobs e comandos |
-| Repositório SQLite interno | Criar esquema, migrar e persistir Action, Jobs, Comandos e Streams |
+| Repositório SQLite interno | Criar esquema, migrar e persistir Action, Jobs, Comandos, chunks e linhas indexadas |
 | Adaptador InsulaVM | Criar/encerrar VM, transferir arquivos e executar comandos usando API pública |
 | InsulaVM | Gerenciar QEMU/KVM/Libvirt, Cloud-Init e SSH |
 
@@ -45,7 +45,8 @@ flowchart LR
 7. STDIN/STDOUT/STDERR separados e exit code estruturado dependem de `ExecuteCommand`, ainda pendente no InsulaVM. Não simular separação com saída combinada.
 8. Comandos do YAML não executam no host; a biblioteca delega a execução ao InsulaVM. Scripts administrativos de bootstrap não são aceitos do YAML não confiável.
 9. Cancelamento e erros não devem descartar logs parciais; encerrar a VM com contexto de cleanup independente.
-10. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
+10. Logs incrementais usam cursor de linha persistido, preservando separadamente os chunks binários originais.
+11. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
 
 ## Documentos canônicos
 

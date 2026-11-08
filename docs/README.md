@@ -8,7 +8,7 @@
 | Documento | Fonte canônica de |
 | --- | --- |
 | [ARQ-001 — Arquitetura](arquitetura/ARQ-001-executor-actions.md) | Componentes, dependências e isolamento |
-| [INTF-GO-001 — API pública](interfaces/go/INTF-GO-001-biblioteca-publica.md) | `New`, `RunYAML`, `RunFile` e métodos de consulta |
+| [INTF-GO-001 — API pública](interfaces/go/INTF-GO-001-biblioteca-publica.md) | `New`, `RunYAML`, `RunFile`, navegação por objetos e logs incrementais |
 | [INTF-TERM-001 — CLI de testes](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Sintaxe, comandos, parâmetros, STDIO e códigos de saída |
 | [CONTR-001 — YAML](contratos/CONTR-001-configuracao-action.md) | Estrutura e validação do manifesto |
 | [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Tabelas, IDs, índices, relacionamentos |

@@ -47,7 +47,7 @@ sequenceDiagram
             I->>V: Abre nova sessão SSH e executa
             V-->>I: stdout / stderr / exit code
             I-->>A: Chunks separados + resultado
-            A->>D: Grava command_outputs por stream e sequência
+            A->>D: Grava chunks brutos e linhas indexadas
             A->>D: Atualiza exit_code, status e tempo do comando
         end
         A->>D: Atualiza status final do job
@@ -66,7 +66,7 @@ O diagrama exibe a **meta futura**, não chamadas que já estejam todas disponí
 3. Inicializar a biblioteca com `insulavm.New` e validar origem. No modo perfil, criar a VM isolada e guardar `vm_id` gerado pelo InsulaVM; no modo ISO ainda não suportado, retornar erro controlado.
 4. Executar importações opcionais **somente por operações públicas do InsulaVM**, respeitando `guest.destination` e validação dos arquivos.
 5. Para cada job, processar os comandos em sequência. Antes de enviar comando, gerar `command_id` UUIDv7 e persistir seu texto. Cada comando é uma execução independente; não preservar estado de shell entre comandos.
-6. Receber os bytes de stdin (quando houver e se captura autorizada), stdout e stderr com escritores independentes; persistir como chunks BLOB em `command_outputs` antes de marcar comando como finalizado.
+6. Receber os bytes de stdin (se autorizado), stdout e stderr com escritores independentes; persistir chunks BLOB em `command_outputs` e linhas derivadas em `command_log_lines`. Persistir fragmentos finais sem LF no término do comando; não divulgar cursores antes de confirmar a gravação.
 7. Registrar exit code remoto verdadeiro. Se não zero, marcar comando com falha e interromper os comandos seguintes e jobs posteriores quando `allow_failure=false`; com `allow_failure=true`, continuar desde que seja falha remota conhecida, não erro de infraestrutura.
 8. Em cancelamento, falha de execução ou falha de armazenamento, registrar o que for possível, não declarar sucesso e tentar encerrar a VM. Marcar jobs/comandos que não começaram como `skipped` ou `cancelled`, conforme causa.
 9. Sempre tentar `StopVM` explicitamente, usando contexto de limpeza independente do contexto cancelado. Registrar erro de limpeza na Action e **não** marcar sucesso completo se a política de limpeza obrigatória falhar.
@@ -103,4 +103,4 @@ O diagrama exibe a **meta futura**, não chamadas que já estejam todas disponí
 
 ## Consultas após a execução
 
-O consumidor usa `GetAction`, `ListActions`, `ListJobs`, `ListCommands` e `ListCommandOutputs` para consultar o histórico; nenhuma consulta altera os dados. Ver [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). A [CLI local de testes](../interfaces/terminal/INTF-TERM-001-cli-testes.md) utiliza essas mesmas operações, portanto não constitui um fluxo de execução diferente.
+O consumidor usa `GetAction` e `ListActions` para localizar a execução e navega por `Action.Jobs(ctx)`, `Job.Commands(ctx)` e `Command.Logs(ctx, skipLines)` ou `Command.Outputs(ctx, filter, page)`; nenhuma consulta altera os dados. Ver [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). A [CLI local de testes](../interfaces/terminal/INTF-TERM-001-cli-testes.md) utiliza essas mesmas operações, portanto não constitui um fluxo de execução diferente.

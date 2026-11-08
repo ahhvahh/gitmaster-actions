@@ -21,9 +21,12 @@ gitmaster-actions jobs list --action-id UUID --db CAMINHO [--json]
 gitmaster-actions jobs get --id UUID --db CAMINHO [--json]
 gitmaster-actions commands list --job-id UUID --db CAMINHO [--json]
 gitmaster-actions commands get --id UUID --db CAMINHO [--json]
+gitmaster-actions logs list --command-id UUID --db CAMINHO [--skip-lines N] [--format text|json]
 gitmaster-actions outputs list --command-id UUID --db CAMINHO [--stream stdin|stdout|stderr] [--format text|json|raw]
 gitmaster-actions --help
 ```
+
+`--skip-lines N` aceita um inteiro não negativo (padrão 0) e solicita apenas linhas com número maior que N. `logs list` retorna no máximo 500 linhas e usa `LineNumber` para a próxima consulta; `outputs list` permanece distinto para chunks brutos.
 
 `--db` é o caminho do SQLite administrado pela biblioteca. `--insula-config` informa a configuração administrativa InsulaVM **somente** para execução. O formato humano é padrão para listagens; `--json` oferece registros estruturados. `outputs list --format raw` escreve exatamente os bytes `payload`, sem cabeçalhos, conversão, decoração ou alteração de quebra de linha. Em `--format text`, os bytes são exibidos para inspeção, e dados binários podem não ser legíveis.
 
@@ -36,9 +39,10 @@ A CLI é invocada por processo: cada comando inicializa um `Engine`, chama a API
 | `run --file` | `RunFile` | Arquivo YAML, `Options` | ID, estado, ID da VM, erro ou resumo |
 | `run --stdin` | `RunYAML` | Bytes do stdin, `Options` | Mesmo resultado da execução por arquivo |
 | `actions list/get` | `ListActions` / `GetAction` | Filtros ou UUID | Ações e estados |
-| `jobs list/get` | `ListJobs` / `GetJob` | UUID Action ou Job | Jobs e estados |
-| `commands list/get` | `ListCommands` / `GetCommand` | UUID Job ou Comando | Comandos, exit code e estados |
-| `outputs list` | `ListCommandOutputs` | UUID Comando, filtro de stream | Chunks ou bytes do canal solicitado |
+| `jobs list/get` | `GetAction(...).Jobs(ctx)` / `GetJob` | UUID Action ou Job | Jobs e estados |
+| `commands list/get` | `GetJob(...).Commands(ctx)` / `GetCommand` | UUID Job ou Comando | Comandos, exit code e estados |
+| `logs list` | `GetCommand(...).Logs(ctx, skipLines)` | UUID Comando e cursor | Até 500 linhas numeradas, sem repetição |
+| `outputs list` | `GetCommand(...).Outputs(ctx, filter, page)` | UUID Comando, filtro de stream | Chunks ou bytes brutos |
 
 Contratos dos tipos, erros de negócio e consultas: [INTF-GO-001](../go/INTF-GO-001-biblioteca-publica.md). Entidades e tipos de stream: [PERS-001](../../persistencia/PERS-001-registro-execucoes.md). Fluxo executado por `run`: [FLUX-001](../../fluxos/FLUX-001-execucao-action.md).
 
@@ -76,6 +80,9 @@ cat ./action.yaml | gitmaster-actions run --stdin --db ./actions.db --insula-con
 # Acompanhar histórico depois da execução
 gitmaster-actions actions list --db ./actions.db
 gitmaster-actions jobs list --action-id 018f0000-0000-7000-8000-000000000001 --db ./actions.db
+
+# Consultar apenas logs após as primeiras 150 linhas
+gitmaster-actions logs list --command-id 018f0000-0000-7000-8000-000000000002 --skip-lines 150 --format json --db ./actions.db
 
 # Ver saída de erro de um comando sem alterar os bytes
 gitmaster-actions outputs list --command-id 018f0000-0000-7000-8000-000000000002 --stream stderr --format raw --db ./actions.db

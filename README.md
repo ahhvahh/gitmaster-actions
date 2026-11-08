@@ -4,7 +4,7 @@
 
 Biblioteca Go para executar Actions em VMs isoladas com [InsulaVM](https://github.com/ahhvahh/InsulaVM), registrar histórico local em SQLite e permitir consultas a Actions, Jobs, comandos e streams por métodos públicos.
 
-A aplicação consumidora fornece o YAML em memória (`RunYAML`) ou o caminho do manifesto (`RunFile`). A biblioteca gera os UUIDs e administra integralmente seu banco de dados.
+A aplicação consumidora fornece o YAML em memória (`RunYAML`) ou o caminho do manifesto (`RunFile`). A biblioteca gera os UUIDs e administra integralmente seu banco de dados. As consultas navegam por `Action.Jobs(ctx)`, `Job.Commands(ctx)` e `Command.Logs(ctx, skipLines...)`, permitindo buscar somente linhas ainda não recebidas.
 
 ## CLI auxiliar de testes
 
@@ -17,6 +17,7 @@ gitmaster-actions run --file ./action.yaml --db ./actions.db --insula-config ./i
 gitmaster-actions actions list --db ./actions.db
 gitmaster-actions jobs list --action-id "$ACTION_ID" --db ./actions.db
 gitmaster-actions commands list --job-id "$JOB_ID" --db ./actions.db
+gitmaster-actions logs list --command-id "$COMMAND_ID" --skip-lines 150 --db ./actions.db
 gitmaster-actions outputs list --command-id "$COMMAND_ID" --stream stderr --db ./actions.db
 ```
 
