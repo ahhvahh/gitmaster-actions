@@ -1,6 +1,6 @@
 # GitMaster Actions
 
-**Estado:** documentação de arquitetura e interfaces proposta; implementação Go pendente.
+**Estado:** biblioteca Go e CLI inicial implementadas em `main`; compilação e testes em VM real ainda não verificados. APIs futuras de perfis/rede e streams nativos continuam propostas.
 
 Biblioteca Go para executar Actions em **VMs locais clonadas de perfis QCOW2 já preparados** com [InsulaVM](https://github.com/ahhvahh/InsulaVM), registrar histórico local em SQLite e permitir consultas a Actions, Jobs, comandos e streams por métodos públicos. Cada Action contém Jobs diretamente (sem pipelines). Memória e CPUs vêm do perfil, com sobrescrita opcional na execução.
 
@@ -12,9 +12,9 @@ Foi definido o método administrativo **proposto** `Engine.CreateProfile(ctx, re
 
 ## CLI auxiliar de testes
 
-O projeto **também terá** o executável opcional `gitmaster-actions` para execução e inspeção local. Essa CLI será apenas um adaptador sobre a mesma API Go: **não é serviço, daemon, runner GitHub Actions nem outra implementação do executor**.
+O projeto **também inclui** o executável opcional `gitmaster-actions` para execução e inspeção local. Essa CLI será apenas um adaptador sobre a mesma API Go: **não é serviço, daemon, runner GitHub Actions nem outra implementação do executor**.
 
-Exemplos previstos, **ainda não executáveis**:
+Exemplos da interface proposta (algumas flags abaixo permanecem pendentes; consulte os comandos reais ao final):
 
 ```bash
 gitmaster-actions profiles create --name debian13-mysql --source-qcow2 /srv/images/debian13-mysql.qcow2 --memory-mib 4096 --vcpus 2 --internet no --db ./actions.db --insula-config ./insula-config.yaml

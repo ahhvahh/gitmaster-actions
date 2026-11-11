@@ -3,7 +3,7 @@
 
 # Documentação — GitMaster Actions
 
-**Estado:** biblioteca Go e CLI de testes propostas, sem implementação neste repositório. **Não é serviço nem daemon; a CLI é opcional.** Convenção A-Bioma Doc Standard, sem alegar certificação.
+**Estado:** biblioteca Go e CLI inicial presentes no repositório, com validação de build e InsulaVM real ainda pendente. **Não é serviço nem daemon; a CLI é opcional.** Convenção A-Bioma Doc Standard, sem alegar certificação.
 
 | Documento | Fonte canônica de |
 | --- | --- |
@@ -15,4 +15,4 @@
 | [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Tabelas, IDs, índices, relacionamentos |
 | [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Ordem, falhas, cancelamento e cleanup |
 
-**Criação de perfis:** contrato proposto, sem implementação Go; rede por perfil e clone não destrutivo requerem melhorias no InsulaVM. **Ambiente:** uma Action usa uma VM clonada de perfil existente no InsulaVM local; os Jobs pertencem diretamente à Action. O banco SQLite não armazena dados da VM e não há recuperação após queda/reinício do servidor. **Dependência pendente:** STDIO separado com exit code (`ExecuteCommand`) no InsulaVM.
+**Criação de perfis:** contrato proposto, sem implementação Go; rede por perfil e clone não destrutivo requerem melhorias no InsulaVM. **Ambiente:** uma Action usa uma VM clonada de perfil existente no InsulaVM local; os Jobs pertencem diretamente à Action. O banco SQLite não armazena dados da VM e não há recuperação após queda/reinício do servidor. **Dependência pendente:** STDIO nativo separado e bytes exatos do guest; o adaptador atual interpreta a saída textual formatada pelo InsulaVM.

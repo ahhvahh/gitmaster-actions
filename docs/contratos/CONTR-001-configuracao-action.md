@@ -3,11 +3,11 @@
 
 # CONTR-001 — Contrato proposto de configuração de Action
 
-**Estado:** proposto; nenhum parser implementado neste repositório. O arquivo de Action não é o `config.yaml` global do InsulaVM. A biblioteca aceita tanto `RunYAML(ctx, []byte)` quanto `RunFile(ctx, path)`; o segundo delega ao mesmo parser. Caminhos relativos de importação são resolvidos a partir da pasta do arquivo somente em `RunFile`; para `RunYAML`, exigir caminhos absolutos.
+**Estado:** parser YAML estrito implementado em `manifest.go`, ainda sem validação de build/KVM. O arquivo de Action não é o `config.yaml` global do InsulaVM. A biblioteca aceita tanto `RunYAML(ctx, []byte)` quanto `RunFile(ctx, path)`; o segundo delega ao mesmo parser. Caminhos relativos de importação são resolvidos a partir da pasta do arquivo somente em `RunFile`; para `RunYAML`, exigir caminhos absolutos.
 
 ## Objetivo
 
-Uma **Action** é uma execução de **uma VM local clonada a partir de um perfil InsulaVM já preparado**, no mesmo host do processo da biblioteca/CLI. Só é permitido `vm.profile`; memória e vCPUs são parâmetros opcionais e, quando omitidos, são herdados do perfil existente. Jobs são filhos diretos de `action`; não existe Pipeline.
+Uma **Action** é uma execução de **uma VM local clonada a partir de um perfil InsulaVM já preparado**, no mesmo host do processo da biblioteca/CLI. Só é permitido `vm.profile`; memória e vCPUs são parâmetros opcionais e, quando omitidos, são herdados do perfil existente. **O engine atual rejeita sobrescritas não zero** até integrar essa opção à inicialização da VM. Jobs são filhos diretos de `action`; não existe Pipeline.
 
 ## Exemplo proposto (`action.yaml`)
 
@@ -38,7 +38,7 @@ logging:
   capture_stdin: false
 ```
 
-**Exemplo ilustrativo, ainda não executável**: este contrato é específico do GitMaster Actions; o adaptador usa a biblioteca Go InsulaVM, não passa este YAML diretamente ao parser do InsulaVM.
+**Exemplo de entrada validada pelo parser; execução real depende de configuração InsulaVM disponível**: este contrato é específico do GitMaster Actions; o adaptador usa a biblioteca Go InsulaVM, não passa este YAML diretamente ao parser do InsulaVM.
 
 
 ## Campos

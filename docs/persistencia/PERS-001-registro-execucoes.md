@@ -3,7 +3,7 @@
 
 # PERS-001 — Registro de Actions, jobs, comandos e streams no SQLite
 
-**Estado:** esquema proposto, **não** aplicado em banco. Este documento é a fonte canônica de entidades, tipos, relacionamentos, estados e índices para o GitMaster Actions.
+**Estado:** implementação SQLite inicial aplicada por `openStore` na inicialização da biblioteca. A DDL detalhada abaixo permanece contrato de referência e não representa uma cópia literal das migrações atuais. Este documento é a fonte canônica de entidades, tipos, relacionamentos, estados e índices para o GitMaster Actions.
 
 ## Objetivo
 
@@ -148,7 +148,7 @@ O SQLite **não** registra YAML, repositório, origem do perfil, RAM/vCPU ou VMI
 - `stream_type='stdin'`: **dados enviados do executor para a VM**, não resposta produzida pela VM. Só gravar com `logging.capture_stdin=true` para entradas autorizadas; padrão seguro é não persistir stdin.
 - `stream_type='stdout'`: bytes gerados pelo processo remoto em seu canal padrão.
 - `stream_type='stderr'`: bytes gerados pelo processo remoto em seu canal de erro.
-- `payload` é **BLOB**, não `TEXT`: preservar bytes NUL, UTF-8 incompleto, ausência de newline e conteúdo binário.
+- `payload` é **BLOB**, não `TEXT`. **Limitação atual:** o InsulaVM fornece console textual decorado, portanto a captura via `ExecVM` não garante fidelidade binária do stdout/stderr original; essa garantia depende da futura API de streams nativos.
 - `sequence_no` cresce por comando (0, 1, 2, ...), atribuído por um gravador que serializa os eventos de I/O. A sequência representa a **ordem de captura no host**; não garante a ordem causal entre stdout e stderr na VM.
 - O gravador DEVE manter a ordem dos chunks **dentro de cada stream**. Separar escritores/leituras concorrentes e serializar os inserts para evitar colisão de sequência.
 - Inserir comandos antes dos chunks; registrar `exit_code` apenas quando o remoto informou um código confiável. Um processo que terminou com código não zero (`failure_kind='remote_exit'`) não deve ser confundido com erro SSH (`failure_kind='infrastructure'`).

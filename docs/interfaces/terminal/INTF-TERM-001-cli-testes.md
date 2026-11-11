@@ -3,7 +3,7 @@
 
 # INTF-TERM-001 — CLI auxiliar para testes locais
 
-**Estado:** interface proposta; nenhum binário ou comando foi implementado neste repositório.
+**Estado:** CLI inicial implementada em `cmd/gitmaster-actions/main.go`; esta referência ainda descreve funcionalidades futuras não disponíveis (`outputs --format raw`, política de internet e clonagem de VM).
 
 ## Objetivo e limite
 
@@ -11,7 +11,7 @@ Fornecer o executável opcional `gitmaster-actions` (diretório Go previsto: `cm
 
 As entradas de execução são mutuamente exclusivas: `--file CAMINHO` ou `--stdin` (YAML lido em bytes). Um dos dois é obrigatório em `run`. A CLI não oferece flags para escolher a VM: o manifesto [CONTR-001](../../contratos/CONTR-001-configuracao-action.md) exige `vm.profile` já preparado no InsulaVM local, e memória/CPUs são opcionais.
 
-## Sintaxe proposta
+## Sintaxe proposta e extensão futura
 
 ```text
 gitmaster-actions run (--file ARQUIVO | --stdin) --db CAMINHO --insula-config CAMINHO [--json]

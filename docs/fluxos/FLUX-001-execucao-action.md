@@ -3,8 +3,8 @@
 
 # FLUX-001 — Executar uma Action em VM isolada
 
-**Estado:** proposto; nenhuma implementação neste repositório.
-**Versão aprovada:** nenhuma.
+**Estado:** fluxo base implementado em Go; sem teste KVM real nem recuperação automática de VMs após reinício.
+**Versão de produção aprovada:** nenhuma (compilação e KVM pendentes).
 
 ## Objetivo
 

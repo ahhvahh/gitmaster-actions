@@ -3,7 +3,7 @@
 
 # ARQ-001 — Arquitetura da biblioteca GitMaster Actions
 
-**Estado:** proposto; nenhuma implementação neste repositório.
+**Estado:** biblioteca de execução/consulta e runtime InsulaVM implementados em Go, ainda sem validação local de compilação ou KVM. As extensões não implementadas continuam explicitamente propostas.
 
 ## Objetivo
 
@@ -42,12 +42,12 @@ flowchart LR
 4. A biblioteca é a única responsável por gravações e migrações de `actions.db`; consumidores, inclusive a CLI, usam métodos de leitura e execução. Consultas não dependem da inicialização de VM.
 5. O YAML não pode escolher o caminho do banco nem o arquivo global InsulaVM; são opções administrativas de `New`.
 6. O manifesto exige perfil QCOW2 já preparado no InsulaVM do mesmo host. O perfil define memória e CPUs; sobrescritas opcionais valem apenas para a instância.
-7. STDIN/STDOUT/STDERR separados e exit code estruturado dependem de `ExecuteCommand`, ainda pendente no InsulaVM. Não simular separação com saída combinada.
+7. O adaptador atual reconhece os prefixos textuais de stdout/stderr emitidos pelo InsulaVM; **não** fornece fidelidade binária nem streams nativos. A futura API de streams estruturados continua pendente.
 8. Comandos do YAML não executam no host; a biblioteca delega a execução ao InsulaVM. Scripts administrativos de bootstrap não são aceitos do YAML não confiável.
 9. Cancelamento e erros não devem descartar logs parciais; encerrar a VM com contexto de cleanup independente.
 10. Logs incrementais usam cursor de linha persistido, preservando separadamente os chunks binários originais.
 11. `CreateProfile` é operação administrativa separada de `RunFile`/`RunYAML`: perfis residem no InsulaVM; rede por perfil e clonagem não destrutiva de VM existente estão pendentes e não podem ser simuladas silenciosamente.
-12. O GitMaster Actions não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
+12. O GitMaster Actions ainda não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
 13. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
 
 ## Documentos canônicos

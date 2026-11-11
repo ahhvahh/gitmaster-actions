@@ -3,7 +3,7 @@
 
 # INTF-GO-001 — API pública da biblioteca GitMaster Actions
 
-**Estado:** proposta, sem implementação. Fonte canônica das assinaturas lógicas públicas.
+**Estado:** API principal implementada no pacote Go, com limitações de execução descritas abaixo. Compilação e testes KVM não verificados.
 
 ## Inicialização e propriedade
 
