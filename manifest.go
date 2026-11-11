@@ -66,7 +66,7 @@ func parseManifest(data []byte,baseDir string)(manifest,error){
         }
         source,err:=filepath.Abs(source)
         if err!=nil{return m,err}
-        if filepath.Ext(source)!=".gz" {return m,errors.New("imports must be .tar.gz archives")}
+        if !strings.HasSuffix(strings.ToLower(source),".tar.gz") {return m,errors.New("imports must be .tar.gz archives")}
         fi,err:=os.Lstat(source)
         if err!=nil{return m,err}
         if !fi.Mode().IsRegular() {return m,errors.New("import must be a regular file")}

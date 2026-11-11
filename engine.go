@@ -170,10 +170,21 @@ func(e *Engine) run(ctx context.Context,data []byte,baseDir string)(*Action,erro
         vmID,err=runtime.Start(runCtx,m.VM.Profile,nil)
         if err!=nil{return fmt.Errorf("start VM: %w",err)}
         if err=e.setStatus(runCtx,"actions",id,"running","");err!=nil{return err}
-        for _,item:=range m.Action.Imports {
-            // Deploy is bound to an explicit, already-validated local archive.
-            if err=runtime.Deploy(runCtx,vmID,item.Source,"",nil);err!=nil{
-                return fmt.Errorf("deploy %q: %w",item.Source,err)
+        if len(m.Action.Imports)>0 {
+            // DeployToVM requires an administrator-owned post-import script.
+            // The untrusted manifest never selects script content or its path.
+            postImport,err:=os.CreateTemp("","gitmaster-actions-deploy-*.sh")
+            if err!=nil{return err}
+            scriptPath:=postImport.Name()
+            defer os.Remove(scriptPath)
+            if _,err=postImport.WriteString("#!/bin/sh\\nset -eu\\ntest -d .\\n");err!=nil{
+                _=postImport.Close();return err
+            }
+            if err=postImport.Close();err!=nil{return err}
+            for _,item:=range m.Action.Imports {
+                if err=runtime.Deploy(runCtx,vmID,item.Source,scriptPath,nil);err!=nil{
+                    return fmt.Errorf("deploy %q: %w",item.Source,err)
+                }
             }
         }
         for j,job:=range m.Action.Jobs{
