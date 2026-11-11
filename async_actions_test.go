@@ -299,3 +299,89 @@ func TestUnsafeSnapshotRejected(t *testing.T) {
 		t.Fatal("accepted archive path traversal")
 	}
 }
+func TestSnapshotCredentialPaths(t *testing.T) {
+	for _, name := range []string{
+		".env", "src/.env.production", ".ssh/id_rsa", "tools/id_ed25519",
+		".aws/credentials", "secrets/client.key", "certs/private.p12",
+	} {
+		if !forbiddenSnapshotPath(name) {
+			t.Fatalf("credential material accepted: %q", name)
+		}
+	}
+	for _, name := range []string{
+		".env.example", ".env.sample", ".env.template", "src/main.go", "docs/key-reference.md",
+	} {
+		if forbiddenSnapshotPath(name) {
+			t.Fatalf("non-secret path rejected: %q", name)
+		}
+	}
+}
+
+func TestSnapshotArchiveRejectsSecretFile(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "secret.tar.gz")
+	f, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	tarWriter := tar.NewWriter(gz)
+	if err := tarWriter.WriteHeader(&tar.Header{Name: "src/.env.production", Mode: 0600, Size: 1, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tarWriter.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := safeSnapshotArchive(name); err == nil {
+		t.Fatal("accepted credential file inside TAR.GZ")
+	}
+}
+
+func TestReconcileInterruptedDoesNotStopRunningAction(t *testing.T) {
+	ctx := context.Background()
+	rt := &testRuntime{block: true}
+	e, _ := newTestEngine(t, rt)
+	defer e.Close()
+	action, err := e.SubmitYAML(ctx, SubmitRequest{Format: FormatActionV1, YAML: []byte(validManifest)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the command is blocked inside the VM so cleanup is pending.
+	deadline := time.After(3 * time.Second)
+	for {
+		rt.mu.Lock()
+		n := rt.commands
+		rt.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("VM command did not start")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := e.ReconcileInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Lock()
+	stops := rt.stops
+	rt.mu.Unlock()
+	if stops != 0 {
+		t.Fatalf("reconciler stopped a running VM: %d stops", stops)
+	}
+	if err := e.CancelAction(ctx, action.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.WaitAction(ctx, action.ID); err != nil {
+		t.Fatal(err)
+	}
+}

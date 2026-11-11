@@ -309,7 +309,7 @@ func (e *Engine) ReconcileInterrupted(ctx context.Context) error {
 	if err := e.assertOpen(); err != nil {
 		return err
 	}
-	rows, err := e.db.QueryContext(ctx, `SELECT id,vm_id FROM actions WHERE cleanup_status='pending' AND vm_id IS NOT NULL`)
+	rows, err := e.db.QueryContext(ctx, `SELECT id,vm_id FROM actions WHERE cleanup_status IN ('pending','failed') AND vm_id IS NOT NULL AND status IN ('succeeded','failed','cancelled')`)
 	if err != nil {
 		return err
 	}

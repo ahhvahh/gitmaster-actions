@@ -23,6 +23,27 @@ var actionSecrets = regexp.MustCompile(`(?i)(github_pat_[A-Za-z0-9_]+|gh[pousr]_
 
 func redactActionText(s string) string { return actionSecrets.ReplaceAllString(s, "[redacted]") }
 
+// forbiddenSnapshotPath rejects common credential and private-key locations.
+// This is defense in depth; callers must also screen their own repository secrets.
+func forbiddenSnapshotPath(name string) bool {
+	for _, part := range strings.Split(strings.ToLower(name), "/") {
+		switch part {
+		case ".git", ".ssh", ".aws", ".gnupg", ".kube", ".netrc", ".npmrc", ".pypirc",
+			".git-credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519":
+			return true
+		}
+		if part == ".env" || (strings.HasPrefix(part, ".env.") &&
+			part != ".env.example" && part != ".env.sample" && part != ".env.template") {
+			return true
+		}
+		if strings.HasSuffix(part, ".key") || strings.HasSuffix(part, ".p12") ||
+			strings.HasSuffix(part, ".pfx") || strings.HasSuffix(part, ".kdbx") {
+			return true
+		}
+	}
+	return false
+}
+
 func safeSnapshotArchive(file string) error {
 	fi, err := os.Lstat(file)
 	if err != nil {
@@ -43,6 +64,7 @@ func safeSnapshotArchive(file string) error {
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 	files := 0
+	entries := 0
 	var total int64
 	seen := map[string]bool{}
 	for {
@@ -53,12 +75,22 @@ func safeSnapshotArchive(file string) error {
 		if err != nil {
 			return err
 		}
+		entries++
+		if entries > 20000 {
+			return errors.New("archive exceeds entry limit")
+		}
 		name := strings.TrimSuffix(h.Name, "/")
-		if name == "" || path.IsAbs(name) || strings.Contains(name, "\\") || strings.ContainsRune(name, 0) || path.Clean(name) != name || strings.HasPrefix(name, "../") || name == ".." || name == ".git" || strings.HasPrefix(name, ".git/") || seen[name] {
+		if name == "" || path.IsAbs(name) || strings.Contains(name, "\\") || strings.ContainsRune(name, 0) || path.Clean(name) != name || strings.HasPrefix(name, "../") || name == ".." || seen[name] {
 			return fmt.Errorf("unsafe or duplicate archive entry %q", name)
+		}
+		if forbiddenSnapshotPath(name) {
+			return fmt.Errorf("archive contains sensitive path %q", name)
 		}
 		seen[name] = true
 		if h.Typeflag == tar.TypeDir {
+			if h.Size != 0 {
+				return fmt.Errorf("directory has nonzero size %q", name)
+			}
 			continue
 		}
 		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {

@@ -45,7 +45,7 @@ jobs:
 
 ## Falhas e segurança
 
-YAML inválido impede criação da Action. Após a aceitação, falhas de VM são persistidas e retornadas em `WaitAction` como estado final `failed` ou `cancelled`; não são falsamente interpretadas como validação aprovada. `stdout`/`stderr` são inferidos dos prefixos textuais de `ExecVM`, sujeitos às limitações do transporte. O pacote não aplica política de segredos específica de cada cliente; o consumidor deve autorizar comandos e materiais.
+YAML inválido impede criação da Action. Após a aceitação, falhas de VM são persistidas e retornadas em `WaitAction` como estado final `failed` ou `cancelled`; não são falsamente interpretadas como validação aprovada. `stdout`/`stderr` são inferidos dos prefixos textuais de `ExecVM`, sujeitos às limitações do transporte. O validador TAR.GZ recusa caminhos típicos de credenciais (como `.env`, `.ssh`, `.aws`, arquivos `.key` e `.p12`), além de links e entradas inseguras. Limita o arquivo comprimido a 100 MiB, o material descomprimido a 256 MiB, 15.000 arquivos e 20.000 entradas totais. Essa lista não detecta todos os segredos; o consumidor ainda deve autorizar comandos e materiais e executar sua própria política de exclusão de credenciais.
 
 ## Referências
 

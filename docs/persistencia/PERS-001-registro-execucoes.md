@@ -24,7 +24,7 @@ Relacionamentos: `actions 1:N jobs 1:N commands 1:N outputs/log_lines`; `actions
 
 ## Interrupção e retenção
 
-No próximo `New`, registros `pending`, `starting` ou `running` anteriores passam a `failed` com diagnóstico de interrupção. VMs cujos IDs foram persistidos ficam com `cleanup_status=pending` até `ReconcileInterrupted` tentar finalização. A biblioteca **não retoma** steps interrompidos e não garante cleanup da VM quando o ID nunca chegou a ser persistido.
+No próximo `New`, registros `pending`, `starting` ou `running` anteriores passam a `failed` com diagnóstico de interrupção. VMs cujos IDs foram persistidos ficam com `cleanup_status=pending` até `ReconcileInterrupted` tentar finalização. A reconciliação limita-se a Actions em estado terminal, impedindo que uma VM de Action ainda em execução seja encerrada; estados `pending` ou `failed` de cleanup podem ser reprocessados. A biblioteca **não retoma** steps interrompidos e não garante cleanup da VM quando o ID nunca chegou a ser persistido.
 
 O material de execução é copiado antes do enqueue para `actions-material/` com permissões restritas e é removido ao concluir a Action. Permanece seu hash SHA256, não uma cópia do repositório. O consumidor deve fornecer snapshot imutável e seguro; políticas de retenção de logs e autorização de leitura cabem ao serviço consumidor.
 
