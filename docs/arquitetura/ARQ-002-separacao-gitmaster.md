@@ -1,35 +1,32 @@
 <!-- A-BIOMA-DOC-STANDARD -->
 <!-- A-BIOMA-DOC-REVISADO -->
 
-# ARQ-002 — Integração entre GitMaster e GitMaster Actions
+# ARQ-002 — Separação GitMaster / GitMaster Actions
 
-**Estado:** adaptador Go implementado na branch de migração do GitMaster; build e VM real pendentes.
+**Estado:** fronteira da nova biblioteca implementada. O consumidor GitMaster ainda deve atualizar a integração para abandonar o pacote `legacy`; este documento não afirma que essa alteração foi aplicada.
 
-## Fronteira arquitetural
+## Responsabilidades
 
-O GitMaster não usa diretamente `insulavm.New`, `StartVMWithOptions`, `DeployToVM`, `ExecVM`, `StopVM`, SSH ou comandos QEMU/Libvirt. Isso pertence ao runtime em GitMaster Actions, cujo único contato de baixo nível é a biblioteca InsulaVM.
+| Projeto | Responsável por | Não deve fazer |
+| --- | --- | --- |
+| GitMaster | GitHub, contas, clones, branches, commit/push, eventos, leitura do YAML em SHA e TAR.GZ imutável | Criar VM, executar SSH ou escrever em `actions.db` |
+| GitMaster Actions | Validar YAML recebido, SQLite próprio, fila/worker, dependências, logs, VM e cleanup via InsulaVM | Acessar GitHub, clonar, commitar ou publicar |
+| InsulaVM | Perfis, imagens, QEMU/Libvirt, Cloud-Init, SSH, transferência e execução remota | Interpretar workflows GitMaster |
 
-A entrada de material é `legacy.ArchiveProvider`, callback injetado pelo consumidor que produz TAR.GZ de um SHA imutável. A biblioteca valida o arquivo e o envia à VM; o consumidor nunca escreve comandos de guest fora do executor.
+O InsulaVM é importado apenas pela biblioteca GitMaster Actions. GitMaster permanece responsável por autorização e pelo gate de push sobre resultados do **mesmo SHA e configuração**.
 
-A descoberta/validação dos workflows na árvore Git, filtros de branch, commit/push e autorização permanecem em GitMaster. O pacote `legacy` executa o grafo `needs` e os steps e persiste todos os estados/outputs.
+## Migração do consumidor
 
-## Dois modelos de persistência
+O pacote `legacy` foi mantido temporariamente para compatibilidade; o GitMaster em sua integração antiga ainda utiliza `legacy.NewStore` com SQLite externo. Para adotar a nova fronteira, o GitMaster deve:
 
-- `Engine` com `New(Options)` administra seu próprio `actions.db` com entidades Action/Job/Command/Logs por UUIDv7.
-- `legacy.NewStore(db, logs)` reutiliza o arquivo SQLite existente do GitMaster, **mas todas as instruções SQL de action_runs, jobs, comandos e runtime pertencem ao GitMaster Actions**.
-- O GitMaster mantém o esquema Git `clones`, `action_events`, `publications` e o log de operações MCP via interface `ExecutionLogAdapter`. A saída de uma action não deve ser apagada quando a aplicação encerrar.
+1. Instanciar `Engine` com arquivo `actions.db` próprio, separado do banco de clones e eventos.
+2. Selecionar YAML da árvore Git do commit e invocar `SubmitYAML` com origem completa e TAR.GZ autorizado.
+3. Usar `WaitAction`/`GetActionDetails`/logs, sem manipular tabelas da Action.
+4. Executar `ImportLegacyHistory` em um backup do SQLite anterior, comparar resultados com `ListLegacyRecords` e `GetLegacyActionID`, e só então fazer dual-read/cutover.
+5. Não remover tabelas ou referências anteriores sem validação de migração e autorização do mantenedor.
 
-É necessária uma migração futura com dual-read e validação de contagens/IDs antes de trocar o armazenamento histórico para banco separado. **Não remover as tabelas antigas sem plano de migração.**
+**Não há alteração automática do GitMaster nesta biblioteca.** O histórico bruto é mantido e o pacote legado continua disponível até a substituição explícita no consumidor.
 
-## Contrato de execução
+## Referências
 
-```text
-GitMaster: commit -> SHA -> YAML da árvore Git -> plano + evento -> fila
-GitMaster Actions: fila -> Profile -> StartVM -> Deploy TAR.GZ -> Jobs/needs/steps
-GitMaster Actions: logs persistidos -> StopVM/cleanup -> status final
-GitMaster: validação do mesmo SHA/contexto -> autoriza public -> push
-```
-
-A biblioteca não levanta daemon próprio. O worker roda no contexto do serviço GitMaster, com operações fornecidas pelo pacote `legacy`. O `public` é bloqueado em falha, cancelamento, incompletude ou cleanup não confirmado.
-
-**Limitações:** compilação e testes de KVM ainda não executados; console textual do InsulaVM não é API de streams binários; sem mecanismo de rede por perfil ou clones não destrutivos.
+[ARQ-001](ARQ-001-executor-actions.md) · [GUIA-008](../guias/GUIA-008-integracao-gitmaster.md) · [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md)

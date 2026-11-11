@@ -1,61 +1,48 @@
 <!-- A-BIOMA-DOC-STANDARD -->
 <!-- A-BIOMA-DOC-REVISADO -->
 
-# ARQ-001 — Arquitetura da biblioteca GitMaster Actions
+# ARQ-001 — Executor de Actions
 
-**Estado:** biblioteca de execução/consulta e runtime InsulaVM implementados em Go, ainda sem validação local de compilação ou KVM. As extensões não implementadas continuam explicitamente propostas.
+**Estado:** executor Go implementado com armazenamento SQLite exclusivo; a execução em KVM/Libvirt real ainda depende de teste autorizado. O suporte nativo a streams binários separados não é disponibilizado por `ExecVM` na versão fixada do InsulaVM.
 
-## Objetivo
-
-Fornecer um **pacote Go importável** por outros projetos. Não executar como serviço nem daemon. A CLI opcional é um programa auxiliar de testes locais que chama a mesma biblioteca e não contém regras de orquestração ou SQL próprias. O projeto consumidor fornece YAML em memória ou caminho local; a biblioteca gerencia o SQLite, os UUIDs, o ciclo de Action e a VM por meio da API Go do InsulaVM.
-
-## Componentes
-
-| Componente | Responsabilidade |
-| --- | --- |
-| Projeto consumidor | Chamar a biblioteca, fornecer YAML ou caminho, controlar contexto |
-| CLI auxiliar (`cmd/gitmaster-actions`) | Traduzir argumentos, arquivos/stdin e formatos de saída para chamadas da API pública, sem lógica de execução ou SQL |
-| API Go GitMaster Actions | Execução e navegação `Action.Jobs → Job.Commands → Command.Logs/Outputs`, sem SQL exposto |
-| Parser/validador | Ler e validar manifesto, origem da VM e caminhos |
-| Orquestrador | Gerar UUIDs, registrar estados, executar jobs e comandos |
-| Repositório SQLite interno | Criar esquema, migrar e persistir Action, Jobs, Comandos, chunks e linhas indexadas |
-| Adaptador InsulaVM | Iniciar/encerrar VM, transferir arquivos, executar comandos e registrar perfil por métodos públicos; sem duplicar catálogo de perfis |
-| InsulaVM | Gerenciar QEMU/KVM/Libvirt, Cloud-Init e SSH |
+## Contexto e componentes
 
 ```mermaid
 flowchart LR
-    C[Projeto consumidor Go] --> A[API GitMaster Actions]
-    T[CLI opcional de testes] --> A
-    A --> P[Parser YAML]
-    A --> O[Orquestrador]
-    O --> D[(SQLite exclusivo)]
-    O --> I[Biblioteca InsulaVM]
-    I --> V[VM isolada]
-    V -. Streams e resultados .-> O
+    G[GitMaster: Git e SHA] --> A[API GitMaster Actions]
+    L[CLI local: action-v1] --> A
+    A --> P[Validador YAML]
+    P --> D[(actions.db)]
+    D --> W[Worker no processo]
+    W --> I[Biblioteca InsulaVM]
+    I --> V[VM isolada por Action]
+    W --> D
 ```
 
-## Invariantes
+- **GitMaster:** é o responsável pelo Git, pela escolha do YAML na árvore imutável, pelo TAR.GZ e pelo evento; não há Git, clone, commit ou push no GitMaster Actions.
+- **GitMaster Actions:** valida, cadastra Action/Jobs/Commands, organiza dependências, mantém o `actions.db`, executa workers, coleta saídas e controla VM/cleanup.
+- **InsulaVM:** implementa `StartVMWithOptions`, `DeployToVM`, `ExecVM`, `StopVM`, perfis, QEMU/Libvirt, Cloud-Init e transporte SSH. Nenhum step do YAML é executado no host.
+- **CLI:** adaptador opcional da mesma biblioteca; `RunFile` e `RunYAML` aguardam o executor assíncrono em vez de reimplementá-lo.
 
-1. Cada Action, Job e Comando tem UUIDv7 próprio; o VMID é atribuído pelo InsulaVM e utilizado em memória, sem persistência na Action.
-2. Uma VM local clonada de perfil existente por Action. Jobs são filhos diretos da Action (não há pipelines); jobs e comandos executam em sequência, com nova sessão remota por comando.
-3. `actions.db` pertence ao GitMaster Actions; `insula.db` pertence ao InsulaVM. Não escrever diretamente no banco do InsulaVM.
-4. A biblioteca é a única responsável por gravações e migrações de `actions.db`; consumidores, inclusive a CLI, usam métodos de leitura e execução. Consultas não dependem da inicialização de VM.
-5. O YAML não pode escolher o caminho do banco nem o arquivo global InsulaVM; são opções administrativas de `New`.
-6. O manifesto exige perfil QCOW2 já preparado no InsulaVM do mesmo host. O perfil define memória e CPUs; sobrescritas opcionais valem apenas para a instância.
-7. O adaptador atual reconhece os prefixos textuais de stdout/stderr emitidos pelo InsulaVM; **não** fornece fidelidade binária nem streams nativos. A futura API de streams estruturados continua pendente.
-8. Comandos do YAML não executam no host; a biblioteca delega a execução ao InsulaVM. Scripts administrativos de bootstrap não são aceitos do YAML não confiável.
-9. Cancelamento e erros não devem descartar logs parciais; encerrar a VM com contexto de cleanup independente.
-10. Logs incrementais usam cursor de linha persistido, preservando separadamente os chunks binários originais.
-11. `CreateProfile` é operação administrativa separada de `RunFile`/`RunYAML`: perfis residem no InsulaVM; rede por perfil e clonagem não destrutiva de VM existente estão pendentes e não podem ser simuladas silenciosamente.
-12. O GitMaster Actions ainda não recupera VMs após queda/reinício. Seu SQLite conserva somente estados e logs, e não armazena ID nem configuração da VM; status `running` após falha pode ser residual.
-13. A biblioteca não implementa protocolo GitHub Actions runner nem serviço de rede. A CLI só cria processos de curta duração para testes; não inicializa listener ou processo residente.
+## Invariantes operacionais
 
-## Documentos canônicos
+1. `SubmitYAML` aceita somente `action-v1` ou `gitmaster-workflow-v1` selecionado explicitamente. Valida todo o manifesto antes de criar VM.
+2. A transação grava Action UUIDv7, Jobs e Commands completos **antes** de iniciar worker. `pending` não significa sucesso.
+3. Uma chamada `StartVMWithOptions` cria uma VM isolada para a Action. O VM ID fica persistido em `actions.vm_id`, junto do estado de cleanup.
+4. Jobs respeitam `needs`; comandos executam sequencialmente na mesma VM. O consumidor não compartilha comandos shell entre Actions.
+5. A origem Git, o hash SHA256 do YAML e o hash SHA256 do snapshot são persistidos. Replay da mesma identidade com conteúdo diferente retorna conflito.
+6. `actions.db` é independente; `New` toma um lock exclusivo em `<actions.db>.lock` enquanto o Engine estiver aberto. Processos concorrentes devem usar a mesma instância de Engine.
+7. Falhas e cancelamentos mantêm resultados, logs e eventos; `StopVM` usa contexto de cleanup independente. `Close` recusa encerrar um Engine com Actions em execução.
+8. Na reabertura, Actions não terminais anteriores são marcadas `failed`; a recuperação não retoma comandos. `ReconcileInterrupted` tenta parar **somente** VMs registradas para Actions terminais com cleanup pendente.
+9. O snapshot é TAR.GZ validado, copiado para local privado antes do enfileiramento e apagado ao terminar. As restrições são verificadas em [CONTR-003](../contratos/CONTR-003-gitmaster-workflow.md).
 
-- [INTF-GO-001 — API pública](../interfaces/go/INTF-GO-001-biblioteca-publica.md)
-- [INTF-TERM-001 — CLI auxiliar](../interfaces/terminal/INTF-TERM-001-cli-testes.md)
-- [CONTR-001 — YAML](../contratos/CONTR-001-configuracao-action.md)
-- [CONTR-002 — Criar perfil](../contratos/CONTR-002-criacao-perfil.md)
-- [PERS-001 — Banco SQLite](../persistencia/PERS-001-registro-execucoes.md)
-- [FLUX-001 — Processamento](../fluxos/FLUX-001-execucao-action.md)
-- [API Go do InsulaVM](https://github.com/ahhvahh/InsulaVM/blob/main/docs/arquitetura/ARQ-004-biblioteca-go.md)
+## Limites e compatibilidade
+
+- A biblioteca mantém o pacote `legacy` apenas como interface de compatibilidade. **Esse pacote ainda recebe `*sql.DB` do consumidor antigo**; novas integrações devem usar `New(Options)` e `SubmitYAML`.
+- `ImportLegacyHistory` copia os dados em modo somente leitura e normaliza o grafo em `actions.db` com IDs de mapeamento, mantendo as linhas originais em `legacy_archive`.
+- Logs `stdout`/`stderr` são inferidos dos prefixos textuais gerados por `ExecVM`. Não há garantia de bytes nativos nem suporte a captura remota de stdin.
+- Se o processo terminar depois de criar uma VM, mas antes de registrar `vm_id`, a biblioteca não consegue identificá-la para cleanup automático. O InsulaVM permanece responsável por seu próprio tratamento de falhas de startup.
+
+## Referências
+
+[API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Fluxo](../fluxos/FLUX-001-execucao-action.md) · [Persistência](../persistencia/PERS-001-registro-execucoes.md) · [Separação de projetos](ARQ-002-separacao-gitmaster.md)

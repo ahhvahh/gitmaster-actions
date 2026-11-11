@@ -54,6 +54,18 @@ func TestLegacyHistoryImportIsReadOnlyAndIdempotent(t *testing.T) {
 	if len(records[0].Data) == 0 {
 		t.Fatal("lost record body")
 	}
+	importedID,err:=e.GetLegacyActionID(ctx,old,"legacy-1")
+    if err!=nil {t.Fatal(err)}
+    details,err:=e.GetActionDetails(ctx,importedID)
+    if err!=nil {t.Fatal(err)}
+    if details.Action.Status!="succeeded"||len(details.Jobs)!=1||len(details.Jobs[0].Commands)!=1||len(details.Events)!=1 {
+        t.Fatalf("legacy graph was not normalized: %#v",details)
+    }
+    commandID:=details.Jobs[0].Commands[0].Command.ID
+    outputs,err:=e.ListCommandOutputs(ctx,commandID,OutputFilter{},Page{})
+    if err!=nil||len(outputs)!=1||string(outputs[0].Payload)!="ok" {
+        t.Fatalf("legacy output missing: %v %#v",err,outputs)
+    }
 	unchanged, err := os.ReadFile(old)
 	if err != nil {
 		t.Fatal(err)

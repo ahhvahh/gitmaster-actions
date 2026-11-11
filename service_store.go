@@ -49,7 +49,7 @@ type CommandDetails struct {
 func ensureServiceSchema(db *sql.DB) error {
 	columns := map[string]map[string]string{
 		"actions": {
-			"clone_id": "TEXT", "commit_sha": "TEXT", "event_id": "TEXT", "event_type": "TEXT", "branch": "TEXT", "workflow_name": "TEXT", "workflow_path": "TEXT", "yaml_format": "TEXT", "vm_profile": "TEXT", "material_sha256": "TEXT", "material_path": "TEXT", "vm_id": "TEXT", "cleanup_status": "TEXT", "cleanup_error": "TEXT",
+			"clone_id": "TEXT", "commit_sha": "TEXT", "event_id": "TEXT", "event_type": "TEXT", "branch": "TEXT", "workflow_name": "TEXT", "workflow_path": "TEXT", "yaml_format": "TEXT", "vm_profile": "TEXT", "material_sha256": "TEXT", "material_path": "TEXT", "yaml_sha256": "TEXT", "vm_id": "TEXT", "cleanup_status": "TEXT", "cleanup_error": "TEXT",
 		},
 		"jobs":     {"needs_json": "TEXT NOT NULL DEFAULT '[]'", "skip_reason": "TEXT NOT NULL DEFAULT ''", "timeout_seconds": "INTEGER NOT NULL DEFAULT 0"},
 		"commands": {"step_name": "TEXT NOT NULL DEFAULT ''", "working_directory": "TEXT NOT NULL DEFAULT ''"},
@@ -99,6 +99,24 @@ func ensureServiceSchema(db *sql.DB) error {
 	return nil
 }
 
+// findIdenticalSubmission returns a previous run only when its immutable
+// identity, YAML and snapshot match. Legacy rows without hashes are not reusable.
+func (e *Engine) findIdenticalSubmission(ctx context.Context, origin ActionOrigin, yamlHash, materialHash string, format YAMLFormat) (*Action, error) {
+    var id, oldYAML, oldMaterial, oldEvent, oldBranch, oldFormat string
+    err := e.db.QueryRowContext(ctx, `SELECT id,COALESCE(yaml_sha256,''),COALESCE(material_sha256,''),
+        COALESCE(event_id,''),COALESCE(branch,''),COALESCE(yaml_format,'')
+        FROM actions WHERE clone_id=? AND commit_sha=? AND workflow_path=? AND event_type=?`,
+        origin.CloneID, origin.CommitSHA, origin.WorkflowPath, origin.EventType).
+        Scan(&id,&oldYAML,&oldMaterial,&oldEvent,&oldBranch,&oldFormat)
+    if errors.Is(err, sql.ErrNoRows) { return nil,nil }
+    if err != nil { return nil,err }
+    if oldYAML == "" || oldYAML != yamlHash || oldMaterial != materialHash ||
+       oldEvent != origin.EventID || oldBranch != origin.Branch || oldFormat != string(format) {
+        return nil,fmt.Errorf("CONFLICT: existing Action %s has different YAML, material or event metadata",id)
+    }
+    return e.GetAction(ctx,id)
+}
+
 func (e *Engine) addEvent(ctx context.Context, id, stage, message string) error {
 	if stage == "" {
 		return errors.New("runtime event requires stage")
@@ -122,14 +140,14 @@ func (e *Engine) finishQueued(ctx context.Context, id, status, message string) e
 	return err
 }
 func (e *Engine) finishUnstarted(ctx context.Context, actionID, status string) error {
-	if status != "skipped" && status != "cancelled" {
+    if status != "skipped" && status != "cancelled" && status != "failed" {
 		return errors.New("invalid unstarted status")
 	}
-	_, err := e.db.ExecContext(ctx, `UPDATE jobs SET status=?,finished_at=? WHERE action_id=? AND status='pending'`, status, timestamp(), actionID)
+	_, err := e.db.ExecContext(ctx, `UPDATE jobs SET status=?,finished_at=? WHERE action_id=? AND status IN ('pending','running')`, status, timestamp(), actionID)
 	if err != nil {
 		return err
 	}
-	_, err = e.db.ExecContext(ctx, `UPDATE commands SET status=?,finished_at=? WHERE job_id IN (SELECT id FROM jobs WHERE action_id=?) AND status='pending'`, status, timestamp(), actionID)
+	_, err = e.db.ExecContext(ctx, `UPDATE commands SET status=?,finished_at=? WHERE job_id IN (SELECT id FROM jobs WHERE action_id=?) AND status IN ('pending','running')`, status, timestamp(), actionID)
 	return err
 }
 func (e *Engine) skipCommands(ctx context.Context, jobID, status string) error {
@@ -342,12 +360,11 @@ func (e *Engine) ReconcileInterrupted(ctx context.Context) error {
 			message = err.Error()
 			all = errors.Join(all, fmt.Errorf("cleanup %s: %w", x.id, err))
 		}
-		if saveErr := e.setCleanup(context.Background(), x.id, state, message); saveErr != nil {
-			all = errors.Join(all, saveErr)
-		}
-		if saveErr := e.addEvent(context.Background(), x.id, "recovery_cleanup", state+": "+message); saveErr != nil {
-			all = errors.Join(all, saveErr)
-		}
+		persistCtx,done:=context.WithTimeout(context.Background(),10*time.Second)
+        saveErr:=errors.Join(e.setCleanup(persistCtx,x.id,state,message),
+            e.addEvent(persistCtx,x.id,"recovery_cleanup",state+": "+message))
+        done()
+        if saveErr!=nil{all=errors.Join(all,saveErr)}
 	}
 	return all
 }

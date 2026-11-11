@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -220,34 +219,33 @@ func (e *Engine) SubmitYAML(ctx context.Context, req SubmitRequest) (*Action, er
 	if origin.WorkflowName == "" {
 		origin.WorkflowName = plan.Name
 	}
-	// Fully qualified origin keys are unique across clone/SHA/workflow/event.
-	if origin.CloneID != "" {
-		var previous string
-		err = e.db.QueryRowContext(ctx, `SELECT id FROM actions WHERE clone_id=? AND commit_sha=? AND workflow_path=? AND event_type=?`, origin.CloneID, origin.CommitSHA, origin.WorkflowPath, origin.EventType).Scan(&previous)
-		if err == nil {
-			return e.GetAction(ctx, previous)
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-	}
+    if origin.WorkflowName != plan.Name {
+        return nil, errors.New("origin workflow_name does not match the YAML name")
+    }
+    digest := sha256.Sum256(req.YAML)
+    yamlHash := hex.EncodeToString(digest[:])
+    // Replays may reuse only the identical immutable YAML and material.
+    if origin.CloneID != "" {
+        previous, lookupErr := e.findIdenticalSubmission(ctx, origin, yamlHash, checksum, req.Format)
+        if lookupErr != nil { return nil, lookupErr }
+        if previous != nil { return previous, nil }
+    }
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO actions(id,name,status,created_at,clone_id,commit_sha,event_id,event_type,branch,workflow_name,workflow_path,yaml_format,vm_profile,material_sha256,material_path,cleanup_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		id, plan.Name, "pending", timestamp(), origin.CloneID, origin.CommitSHA, origin.EventID, origin.EventType, origin.Branch, origin.WorkflowName, origin.WorkflowPath, string(req.Format), plan.Profile, checksum, material, "not_required")
+	_, err = tx.ExecContext(ctx, `INSERT INTO actions(id,name,status,created_at,clone_id,commit_sha,event_id,event_type,branch,workflow_name,workflow_path,yaml_format,vm_profile,material_sha256,material_path,cleanup_status,yaml_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		id, plan.Name, "pending", timestamp(), origin.CloneID, origin.CommitSHA, origin.EventID, origin.EventType, origin.Branch, origin.WorkflowName, origin.WorkflowPath, string(req.Format), plan.Profile, checksum, material, "not_required", yamlHash)
 	if err != nil {
-		// Release the only SQLite connection before checking a concurrent winner.
-		_ = tx.Rollback()
-		if origin.CloneID != "" {
-			var previous string
-			if lookup := e.db.QueryRowContext(ctx, `SELECT id FROM actions WHERE clone_id=? AND commit_sha=? AND workflow_path=? AND event_type=?`, origin.CloneID, origin.CommitSHA, origin.WorkflowPath, origin.EventType).Scan(&previous); lookup == nil {
-				return e.GetAction(ctx, previous)
-			}
-		}
-		return nil, err
+        // Release SQLite's single write connection before checking the winner.
+        _ = tx.Rollback()
+        if origin.CloneID != "" {
+            previous, lookupErr := e.findIdenticalSubmission(ctx, origin, yamlHash, checksum, req.Format)
+            if lookupErr != nil { return nil, lookupErr }
+            if previous != nil { return previous, nil }
+        }
+        return nil, err
 	}
 	for position, j := range plan.Jobs {
 		jid, err := uuidv7()
@@ -332,10 +330,15 @@ func (e *Engine) completeAction(id string, runErr error) {
 	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 		status = "cancelled"
 	}
-	// An interrupted or canceled job cannot remain pending or running.
-	if status != "succeeded" {
-		_ = e.finishUnstarted(ctx, id, "cancelled")
-	}
+	// Close all unfinished children; no terminal Action may retain running Jobs.
+    if status != "succeeded" {
+        if errors.Is(runErr, context.Canceled) { _ = e.finishUnstarted(ctx, id, "cancelled") } else {
+            _ = e.finishUnstarted(ctx, id, "failed")
+        }
+    }
+    // If teardown failed, cancellation cannot conceal an unresolved VM.
+    var cleanupStatus string
+    if err := e.db.QueryRowContext(ctx, `SELECT COALESCE(cleanup_status,'') FROM actions WHERE id=?`, id).Scan(&cleanupStatus); err == nil && cleanupStatus == "failed" { status = "failed" }
 	if err := e.finishQueued(ctx, id, status, message); err != nil {
 		return
 	}
@@ -482,7 +485,9 @@ func (e *Engine) runSubmittedAction(ctx context.Context, id string, plan executi
 				if len(line) > 4<<20 {
 					return errors.New("command line exceeds 4 MiB capture limit")
 				}
-				return e.appendOutput(jobCtx, cid, stream, []byte(redactActionText(line)+"\n"))
+                outputCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
+                defer done()
+                return e.appendOutput(outputCtx, cid, stream, []byte(redactActionText(line)+"\n"))
 			})
 			exit, runErr := rt.Command(jobCtx, vmID, dir, c.Run, writer)
 			runErr = errors.Join(runErr, writer.Flush())
@@ -537,9 +542,9 @@ func (e *Engine) runSubmittedAction(ctx context.Context, id string, plan executi
 			}
 		}
 		if jobCtx.Err() != nil {
-			jobFailed = true
-			infrastructure = true
-		}
+            jobFailed = true
+            infrastructure = true
+        }
 		jobCancel()
 		status := "succeeded"
 		detail := ""

@@ -1,4 +1,5 @@
 <!-- A-BIOMA-DOC-STANDARD -->
+<!-- A-BIOMA-DOC-REVISADO -->
 
 # CONTR-003 — YAML de workflow GitMaster
 
@@ -41,7 +42,7 @@ jobs:
 - `timeout_seconds` opcional entre 0 e 86400; 0 usa o limite do runtime InsulaVM por comando.
 - `run` deve ser não vazio, sem NUL; não há interpolação nem execução no host.
 
-`ActionOrigin` exige `clone_id`, SHA completo de 40 caracteres, `branch`, `workflow_path` e `event_type` quando a origem Git é informada. O índice de idempotência usa `(clone_id, commit_sha, workflow_path, event_type)`.
+`ActionOrigin` exige `clone_id`, SHA completo de 40 caracteres, `branch`, `workflow_path` e `event_type` quando a origem Git é informada. O índice de idempotência usa `(clone_id, commit_sha, workflow_path, event_type)`. Além da chave de identidade, o replay compara SHA256 do YAML, SHA256 do TAR.GZ, `event_id`, branch e formato; divergências retornam conflito e nunca reutilizam uma aprovação anterior.
 
 ## Falhas e segurança
 

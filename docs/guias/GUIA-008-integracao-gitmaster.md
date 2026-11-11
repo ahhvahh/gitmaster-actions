@@ -1,32 +1,37 @@
 <!-- A-BIOMA-DOC-STANDARD -->
+<!-- A-BIOMA-DOC-REVISADO -->
 
-# GUIA-008 — Integrar GitMaster com GitMaster Actions
+# GUIA-008 — Integração e migração do GitMaster
+
+**Estado:** roteiro para o consumidor, sem modificação automática do repositório GitMaster.
 
 ## Pré-requisitos
 
-- Go compatível com `go.mod` do GitMaster Actions (módulo declara Go 1.27).
-- InsulaVM com configuração local, profile QCOW2 e guest.destination absoluto, não raiz.
-- Caminho gravável para `actions.db` **fora do SQLite do GitMaster**.
-- TAR.GZ produzido a partir do SHA do commit que originou o evento, previamente autorizado.
+- Go 1.27, InsulaVM local configurado e perfil QCOW2 existente.
+- Diretório gravável e exclusivo para `actions.db`, distinto do SQLite do GitMaster. Apenas um Engine ativo por banco (lock `<DatabasePath>.lock`).
+- YAML da árvore imutável do SHA e snapshot TAR.GZ autorizado pelo consumidor.
 
-## Passos
+## Nova execução
 
-1. Fixe a dependência pelo commit da branch `main` que passou pela validação de sua instalação, não por uma branch mutável:
+1. Fixar a dependência em um commit de `main` **que esteja comprovadamente validado**, nunca assumir que um commit apenas publicado passou nos testes.
+2. Inicializar um único `Engine` por arquivo SQLite e compartilhar a instância entre as requisições do serviço.
+3. Ler `.gitmaster/workflow/*.yaml|*.yml` na árvore do SHA; enviar `SubmitRequest{Format: FormatGitMasterV1, YAML, Origin, ArchivePath}`.
+4. Guardar `Action.ID`; acompanhar por `WaitAction`, `GetActionDetails`, `ListCommandLogs`, `ListCommandOutputs` e `ListRuntimeEvents`.
+5. Tratar `pending` como enfileirado, nunca aprovado; exigir estado final `succeeded` e validação ligada ao mesmo commit/contexto antes do push.
+6. No reinício, inspecionar interrupções e chamar `ReconcileInterrupted` quando o InsulaVM estiver disponível. Não retomar comandos antigos automaticamente.
 
-   ```sh
-   go get github.com/ahhvahh/gitmaster-actions@COMMIT_SHA_VALIDADO
-   ```
+## Migração do SQLite anterior
 
-2. Crie o `Engine` uma vez no processo de serviço. Informe `Options.DatabasePath`, `Options.InsulaConfigPath` e, opcionalmente, `Workers`, `StartupScripts` e `ImagesDir`.
-3. Para cada commit/push, leia o YAML de `.gitmaster/workflow/*.yml|*.yaml` da árvore do SHA, **não** da working tree. Envie `SubmitRequest.Format=FormatGitMasterV1`, `YAML`, `ActionOrigin` e `ArchivePath` apontando para o snapshot TAR.GZ.
-4. Persista o `Action.ID` retornado pelo enqueue e consulte `WaitAction`, `GetActionDetails`, `ListCommandLogs`, `ListCommandOutputs` e `ListRuntimeEvents`. Enqueue não equivale a sucesso.
-5. Na inicialização do serviço, chame `ReconcileInterrupted` quando as permissões do runtime estiverem disponíveis. Nunca encerre VMs não vinculadas a Actions anteriores.
-6. Para importar histórico, execute `ImportLegacyHistory` apontando ao SQLite antigo, mantenha o arquivo original como backup e verifique cada tabela com `ListLegacyRecords` antes de planejar a substituição do pacote `legacy`.
+1. Fazer backup consistente do SQLite legado (incluindo WAL, se houver) e conservar o original somente leitura.
+2. Executar `ImportLegacyHistory(ctx, caminhoAbsoluto)` no novo Engine. Uma transação preserva os dados brutos em `legacy_archive`, normaliza Actions/Jobs/Commands/logs/eventos e registra IDs em `legacy_links`.
+3. Comparar a contagem de cada tabela com `ListLegacyRecords`, consultar `GetLegacyActionID` e verificar o mesmo histórico por `GetActionDetails`, `ListCommandOutputs` e `ListRuntimeEvents`.
+4. Migrar o código consumidor do pacote `legacy` para a API do novo Engine. Manter leitura de transição até conferência de dados reais e dos direitos de acesso de cada clone.
+5. Não apagar dados antigos nem alterar GitMaster sem autorização própria. O caminho `legacy.NewStore` permanece por compatibilidade.
 
-## Restrições
+## Limitações
 
-Não importar InsulaVM diretamente no GitMaster. Não executar comandos de YAML no host. A CLI legada `RunFile` continua síncrona e usa `action-v1`; o serviço deve usar `SubmitYAML` e `gitmaster-workflow-v1`. Testes reais de VMs precisam de autorização e host com KVM/Libvirt; o funcionamento do mock não equivale a essa validação.
+A biblioteca não gerencia branches GitMaster, commits ou pushes. O InsulaVM `ExecVM` fornece console textual; não há garantia de captura binária original. Testes KVM/Libvirt reais exigem infraestrutura e autorização adicionais.
 
 ## Referências
 
-[Contrato](../contratos/CONTR-003-gitmaster-workflow.md) · [API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Persistência](../persistencia/PERS-001-registro-execucoes.md)
+[API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Persistência](../persistencia/PERS-001-registro-execucoes.md) · [Separação arquitetural](../arquitetura/ARQ-002-separacao-gitmaster.md)

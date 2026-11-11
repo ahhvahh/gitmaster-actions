@@ -31,6 +31,7 @@ type manifest struct {
 }
 func parseManifest(data []byte,baseDir string)(manifest,error){
     var m manifest
+    if len(data)==0||len(data)>1<<20{return m,errors.New("YAML must be 1..1048576 bytes")}
     decoder:=yaml.NewDecoder(bytes.NewReader(data))
     decoder.KnownFields(true)
     if err:=decoder.Decode(&m);err!=nil{return m,err}

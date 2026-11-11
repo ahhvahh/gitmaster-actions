@@ -1,37 +1,50 @@
 <!-- A-BIOMA-DOC-STANDARD -->
+<!-- A-BIOMA-DOC-REVISADO -->
 
-# PERS-001 — SQLite exclusivo para Actions
+# PERS-001 — Banco SQLite exclusivo das Actions
 
-## Objetivo
+**Estado:** esquema e migrações aditivas implementados em `store.go`, `service_store.go`, `legacy_import.go` e `legacy_normalize.go`. Nenhuma tabela do GitMaster é usada pelo novo `Engine`.
 
-O `Engine` gerencia `actions.db`, sem fornecer `*sql.DB` ao consumidor. `New` aplica migrações **aditivas** sobre as tabelas anteriores, preservando IDs e saídas preexistentes. A única responsabilidade do GitMaster é fornecer YAML e metadados de origem.
+## Propriedade e integridade
 
-## Tabelas
+`New(Options{DatabasePath})` administra `actions.db` e toma um lock advisory exclusivo em `<DatabasePath>.lock` (Linux). `Close` libera o lock, e um segundo Engine apontando ao mesmo banco não pode reclassificar os Jobs de um processo ativo. SQLite usa WAL, foreign keys, busy timeout e uma conexão serializada. O handle `*sql.DB` não é exposto pelo Engine.
 
-| Tabela | Chave | Conteúdo |
+## Entidades persistidas
+
+| Tabela | Identificador | Dados |
 | --- | --- | --- |
-| `actions` | `id` UUIDv7 | Nome, status, timestamps, erro, `clone_id`, `commit_sha`, `event_id`, `event_type`, `branch`, `workflow_name`, `workflow_path`, `yaml_format`, `vm_profile`, `vm_id`, SHA256 do material, caminho privado temporário e estado/erro de cleanup |
-| `jobs` | `id` UUIDv7 | `action_id`, nome, ordem, dependências JSON, filtro/skip, timeout, status e timestamps |
-| `commands` | `id` UUIDv7 | `job_id`, step, diretório relativo, comando autorizado, posição, status, exit code, failure_kind, erro e timestamps |
-| `command_outputs` | `id` INTEGER | Chunks capturados de stdout/stderr (limitação: transporte textual decorado) |
-| `command_log_lines` | `(command_id,line_no)` | Projeção de linhas com cursores incrementais |
-| `runtime_events` | `id` INTEGER | Fases da execução, diagnóstico e cleanup por `action_id` |
-| `legacy_archive` | `id` INTEGER | Linhas das cinco tabelas legadas importadas, com valores tipados em JSON e BLOBs base64 |
+| `actions` | UUIDv7 | Nome, status, tempos, erro, clone/SHA/evento/branch, workflow, formato YAML, hashes de YAML e TAR.GZ, VM ID, cleanup e caminho temporário do material. |
+| `jobs` | UUIDv7 | `action_id`, posição, nome, `needs_json`, motivo de skip, timeout, status e tempos. |
+| `commands` | UUIDv7 | `job_id`, posição, nome/step, diretório, comando, exit code, falha, erro e tempos. |
+| `command_outputs` | inteiro sequencial | `command_id`, `sequence_no`, `stream_type`, payload BLOB e captura. |
+| `command_log_lines` | (`command_id`,`line_no`) | Projeção por linha para consulta incremental. |
+| `runtime_events` | inteiro sequencial | `action_id`, stage, mensagem e instante. |
+| `legacy_archive` | inteiro sequencial | Registro original completo e tipado das cinco tabelas legadas, preservando BLOBs em base64. |
+| `legacy_links` | (`source`,`table_name`,`source_key`) | Mapeamento estável do ID antigo para a entidade normalizada no `actions.db`. |
 
-Relacionamentos: `actions 1:N jobs 1:N commands 1:N outputs/log_lines`; `actions 1:N runtime_events`. SQLite ativa `foreign_keys`, WAL, `busy_timeout` e usa uma conexão serializada. Os nomes das tabelas de dados legados ficam isolados no arquivo `actions.db`, sem foreign keys para clones de GitMaster.
+```mermaid
+erDiagram
+    actions ||--o{ jobs : contem
+    jobs ||--o{ commands : contem
+    commands ||--o{ command_outputs : produz
+    commands ||--o{ command_log_lines : indexa
+    actions ||--o{ runtime_events : registra
+```
 
-`idx_actions_origin_event` é UNIQUE em `(clone_id, commit_sha, workflow_path, event_type)` para origens informadas. Uma submissão idempotente retorna o mesmo ID e não inicia outra VM. `AfterID` em outputs/eventos representa cursor, não OFFSET.
+## Idempotência e retenção
 
-## Interrupção e retenção
+A identidade (`clone_id`,`commit_sha`,`workflow_path`,`event_type`) é única para eventos Git. Reenvio é autorizado **somente** quando o hash do YAML, hash do material, `event_id`, branch e formato coincidirem; conteúdo divergente é rejeitado. Registros anteriores sem hashes não são reutilizados como validação aprovada.
 
-No próximo `New`, registros `pending`, `starting` ou `running` anteriores passam a `failed` com diagnóstico de interrupção. VMs cujos IDs foram persistidos ficam com `cleanup_status=pending` até `ReconcileInterrupted` tentar finalização. A reconciliação limita-se a Actions em estado terminal, impedindo que uma VM de Action ainda em execução seja encerrada; estados `pending` ou `failed` de cleanup podem ser reprocessados. A biblioteca **não retoma** steps interrompidos e não garante cleanup da VM quando o ID nunca chegou a ser persistido.
+A Action, Jobs e Commands são gravados em transação antes da execução. O snapshot privado é removido ao concluir, preservando seu SHA256. Outputs persistidos mantêm o console *textual decorado* do InsulaVM, com redaction limitada; não prometer bytes nativos de stdout/stderr. Proteção, acesso e retenção de comandos e logs devem ser configurados pelo serviço consumidor.
 
-O material de execução é copiado antes do enqueue para `actions-material/` com permissões restritas e é removido ao concluir a Action. Permanece seu hash SHA256, não uma cópia do repositório. O consumidor deve fornecer snapshot imutável e seguro; políticas de retenção de logs e autorização de leitura cabem ao serviço consumidor.
+## Migração e recuperação
 
-## Migração do histórico
+`ImportLegacyHistory(ctx, pathAbsoluto)` abre o SQLite antigo em modo somente leitura. A operação é transacional no banco novo: preserva as cinco tabelas em `legacy_archive`, transforma Actions/Jobs/Commands, restaura logs e eventos para as tabelas próprias e mantém mapeamentos em `legacy_links`. Reimportações são idempotentes por fonte/tabela/ID original. Use `GetLegacyActionID(ctx, source, oldID)` e `GetActionDetails(ctx, id)` para consultar o grafo novo, ou `ListLegacyRecords` para auditoria exata.
 
-`ImportLegacyHistory` abre um **SQLite antigo em modo somente leitura** e importa `action_runs`, `action_jobs`, `action_job_commands`, `action_command_responses`, `action_runtime_messages` para `legacy_archive`. Importações repetidas atualizam a mesma chave de origem, sem duplicar linhas. A API `ListLegacyRecords` recupera os registros completos, inclusive dados binários em base64. **A normalização desses registros no modelo `ActionDetails` ainda não foi implementada;** não desligar o modo legado do GitMaster antes de adaptar a leitura e validar a migração operacional.
+O material histórico pode ter campos não representáveis no esquema atual: **a representação original permanece sempre no arquivo bruto**; outputs `system`/`error` são sinalizados com prefixos ao projetar em stdout/stderr. Não apagar o banco antigo antes de validar contagens, comandos e saída de cada migração. O pacote `legacy.NewStore(db, logs)` continua disponível somente para consumidores não migrados.
+
+Na reabertura, Actions antigas `pending`/`starting`/`running` são marcadas `failed` e seus filhos pendentes são fechados. VM IDs pertencentes a essas Actions podem ser inspecionados e encerrados por `ReconcileInterrupted`, que não atua em Actions ainda em andamento. VMs históricas importadas não são encerradas sem prova de propriedade atual.
 
 ## Referências
 
-[API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Workflow](../contratos/CONTR-003-gitmaster-workflow.md)
+[Interface Go](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Arquitetura](../arquitetura/ARQ-001-executor-actions.md) · [Guia de migração](../guias/GUIA-008-integracao-gitmaster.md)

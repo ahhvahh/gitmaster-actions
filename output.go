@@ -28,6 +28,9 @@ func (w *OutputWriter) Write(p []byte)(int,error) {
             if err:=w.emitLocked(strings.TrimSuffix(w.pending.String(),"\r"));err!=nil{return 0,err}
             w.pending.Reset()
         }else {
+            if w.pending.Len() >= 4<<20 {
+                return 0,errors.New("command console line exceeds 4 MiB; refusing unbounded buffering")
+            }
             _=w.pending.WriteByte(b)
         }
     }

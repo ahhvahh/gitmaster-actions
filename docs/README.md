@@ -1,20 +1,23 @@
 <!-- A-BIOMA-DOC-STANDARD -->
+<!-- A-BIOMA-DOC-REVISADO -->
 
 # Documentação — GitMaster Actions
 
-Uma fonte por contrato e uma distinção explícita entre código implementado e dependências ainda não validadas em VM real.
+Fontes canônicas, vinculadas ao código Go e aos testes. Os documentos em `migracao/gitmaster/` são **referências históricas**; não descrevem automaticamente o estado do executor atual.
 
-| Documento | Assunto |
+| Documento | Fonte de verdade |
 | --- | --- |
-| [CONTR-001 — Action local](contratos/CONTR-001-configuracao-action.md) | Manifesto `action-v1` usado pela CLI legada |
-| [CONTR-003 — Workflow GitMaster](contratos/CONTR-003-gitmaster-workflow.md) | Formato `gitmaster-workflow-v1`, eventos e dependências |
-| [INTF-GO-001 — API](interfaces/go/INTF-GO-001-biblioteca-publica.md) | Submissão, consultas, perfis, cancelamento e importação |
-| [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Esquema, migrações e histórico |
-| [GUIA-008 — Integração](guias/GUIA-008-integracao-gitmaster.md) | Configuração e ligação sem modificar GitMaster |
-| [GUIA-009 — Validação Go 1.27](guias/GUIA-009-validacao-go127.md) | Testes locais, CI complementar e limites KVM |
-| [ARQ-001 — Executor](arquitetura/ARQ-001-executor-actions.md) | Arquitetura e isolamento, histórico da implementação inicial |
-| [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Fluxo inicial, sujeito às atualizações do contrato assíncrono |
-| [INTF-TERM-001 — CLI](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Modo local existente |
-| [Documentação migrada](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Referências históricas preservadas |
+| [ARQ-001 — Executor](arquitetura/ARQ-001-executor-actions.md) | Componentes, isolamento e limites |
+| [ARQ-002 — Projetos](arquitetura/ARQ-002-separacao-gitmaster.md) | Fronteira GitMaster/Actions/InsulaVM |
+| [CONTR-001 — Action local](contratos/CONTR-001-configuracao-action.md) | YAML `action-v1`, CLI e wrappers síncronos |
+| [CONTR-002 — Profiles](contratos/CONTR-002-criacao-perfil.md) | Cadastro de QCOW2 e imagens |
+| [CONTR-003 — Workflow GitMaster](contratos/CONTR-003-gitmaster-workflow.md) | YAML GitMaster, eventos, dependências e SHA |
+| [INTF-GO-001 — API Go](interfaces/go/INTF-GO-001-biblioteca-publica.md) | Assinaturas e retornos Go públicos |
+| [INTF-TERM-001 — CLI](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Sintaxe CLI realmente disponível |
+| [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Esquema, migração e recuperação |
+| [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Sequência submit/worker/VM/cleanup |
+| [GUIA-008 — Integração](guias/GUIA-008-integracao-gitmaster.md) | Integração do consumidor e histórico legado |
+| [GUIA-009 — Validação Go 1.27](guias/GUIA-009-validacao-go127.md) | Ferramentas, comandos e limitações do CI |
+| [ARQ-006 histórico](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Material antigo mantido para auditoria |
 
-**Estado:** o módulo especifica Go 1.27. Testes KVM/Libvirt não executados nesta entrega. A biblioteca principal usa seu SQLite próprio; o pacote `legacy` permanece para compatibilidade e requer migração explícita dos dados antigos.
+**Estado geral:** o pacote principal tem API assíncrona, SQLite independente e runtime InsulaVM via Go; o consumidor `GitMaster` antigo ainda necessita migração explícita. Testes KVM/Libvirt reais pendentes.

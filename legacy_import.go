@@ -30,6 +30,7 @@ func ensureLegacyArchive(db *sql.DB) error {
 	for _, s := range []string{
 		`CREATE TABLE IF NOT EXISTS legacy_archive(id INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT NOT NULL,table_name TEXT NOT NULL,source_key TEXT NOT NULL,row_json BLOB NOT NULL,imported_at TEXT NOT NULL,UNIQUE(source,table_name,source_key))`,
 		`CREATE INDEX IF NOT EXISTS idx_legacy_archive_lookup ON legacy_archive(source,table_name,id)`,
+		`CREATE TABLE IF NOT EXISTS legacy_links(source TEXT NOT NULL,table_name TEXT NOT NULL,source_key TEXT NOT NULL,mapped_id TEXT NOT NULL,PRIMARY KEY(source,table_name,source_key))`,
 	} {
 		if _, err := db.Exec(s); err != nil {
 			return err
@@ -85,6 +86,8 @@ func (e *Engine) ImportLegacyHistory(ctx context.Context, source string) (int, e
 	defer written.Rollback()
 	total := 0
 	for _, table := range legacyTables {
+        type entry struct{ key string; raw map[string]any }
+        normalize := []entry{}
 		rows, err := read.QueryContext(ctx, "SELECT * FROM "+table)
 		if err != nil {
 			return total, fmt.Errorf("legacy table %s: %w", table, err)
@@ -110,9 +113,11 @@ func (e *Engine) ImportLegacyHistory(ctx context.Context, source string) (int, e
 				break
 			}
 			record := map[string]any{}
+            raw := map[string]any{}
 			key := ""
 			for i, name := range names {
 				value := values[i]
+                raw[name]=value
 				if blob, ok := value.([]byte); ok {
 					// Every byte is retained even when a legacy column contains non-UTF8 data.
 					value = map[string]any{"encoding": "base64", "value": base64.StdEncoding.EncodeToString(blob)}
@@ -136,6 +141,7 @@ func (e *Engine) ImportLegacyHistory(ctx context.Context, source string) (int, e
 				break
 			}
 			total++
+            normalize = append(normalize, entry{key:key,raw:raw})
 		}
 		if err == nil {
 			err = rows.Err()
@@ -144,6 +150,12 @@ func (e *Engine) ImportLegacyHistory(ctx context.Context, source string) (int, e
 		if err != nil {
 			return total, err
 		}
+        // All source cursors are closed before writing the normalized children.
+        for _, item := range normalize {
+            if err=normalizeLegacyRow(ctx,written,original,table,item.key,item.raw);err!=nil {
+                return total,fmt.Errorf("normalize %s %s: %w",table,item.key,err)
+            }
+        }
 	}
 	if err = read.Commit(); err != nil {
 		return total, err

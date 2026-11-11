@@ -1,54 +1,55 @@
 <!-- A-BIOMA-DOC-STANDARD -->
+<!-- A-BIOMA-DOC-REVISADO -->
 
-# INTF-GO-001 — API pública da biblioteca
+# INTF-GO-001 — API pública GitMaster Actions
 
-## Objetivo
+**Estado:** API implementada em Go 1.27, com SQLite exclusivo. Testes simulados disponíveis; testes reais InsulaVM/KVM não executados.
 
-A API Go gerencia o ciclo de vida das Actions, sem expor `*sql.DB`. Todos os comandos dos workflows são enviados ao runtime InsulaVM. O GitMaster mantém a responsabilidade pelo Git, eventos e seleção do snapshot.
-
-## Inicialização
+## Inicialização e isolamento
 
 ```go
 engine, err := gitmasteractions.New(gitmasteractions.Options{
-    DatabasePath: "/var/lib/gitmaster-actions/actions.db",
+    DatabasePath:     "/var/lib/gitmaster-actions/actions.db",
     InsulaConfigPath: "/etc/insulavm/config.yaml",
-    ImagesDir: "/var/lib/insulavm/images",
-    Workers: 2,
+    Workers:          2,
 })
+if err != nil { return err }
+defer engine.Close()
 ```
 
-`Close()` recusa fechamento enquanto houver Actions ativas. `RuntimeFactory` é uma alternativa de testes por mocks; não fornece comandos host. `StartupScripts` é fornecido exclusivamente pelo administrador.
+`New` precisa obter lock exclusivo de `<DatabasePath>.lock`. Dois Engines não devem abrir o mesmo arquivo ao mesmo tempo. `Close` retorna erro se houver Actions ativas. `RuntimeFactory` injeta runtime simulado em testes. `StartupScripts` deve ser administrado pelo host, nunca pelo YAML.
 
-## Operações
+## Métodos e contratos
 
-| Assinatura no `Engine` | Comportamento |
+| API | Comportamento |
 | --- | --- |
-| `SubmitYAML(ctx, SubmitRequest) (*Action, error)` | Valida, copia material e persiste Jobs/Commands antes de agendar worker. Exige formato explícito. |
-| `WaitAction(ctx, id) (*Action, error)` | Aguarda status `succeeded`, `failed` ou `cancelled`; erro do contexto interrompe apenas a espera. |
-| `CancelAction(ctx, id) error` | Cancela Action ativa neste processo e aciona cleanup. |
-| `GetAction(ctx, id)`, `ListActions(ctx, filter, page)` | Consultam cabeçalhos de Action. |
-| `GetActionDetails(ctx, id)` | Recupera origem, VM, cleanup, Jobs, Commands e eventos (outputs são paginados à parte). |
-| `ListActionDetails(ctx, filter, page)` | Lista detalhes a partir dos cabeçalhos paginados. |
-| `GetJob(ctx, id)`, `ListJobs(ctx, actionID)` | Consultam Jobs. |
-| `GetCommand(ctx, id)`, `ListCommands(ctx, jobID)` | Consultam Commands. |
-| `ListCommandLogs(ctx, commandID, cursor)` | Retorna até 500 linhas por comando. |
-| `ListCommandOutputs(ctx, commandID, filter, page)` | Recupera saídas persistidas, na ordem dos registros. |
-| `ListRuntimeEvents(ctx, actionID, page)` | Lê eventos de lifecycle com cursor monotônico. |
-| `ListVMProfiles(ctx)`, `GetVMProfile(ctx, name)` | Consulta perfis atuais via InsulaVM. |
-| `RegisterVMProfile(ctx, ProfileRequest)` | Registra profile de imagem QCOW2 autorizada via InsulaVM. |
-| `ListVMImages(ctx)` | Enumera imagens regulares na pasta administrativa. |
-| `ReconcileInterrupted(ctx)` | Tenta encerrar VMs previamente identificadas após reinício. |
-| `ImportLegacyHistory(ctx, sourcePath)` | Copia tabelas legadas do SQLite antigo em modo somente leitura. |
-| `ListLegacyRecords(ctx, source, table, page)` | Permite consultar registros importados sem compartilhar o banco antigo. |
+| `SubmitYAML(ctx, SubmitRequest)` | Valida formato, origem, perfil e snapshot; cria Action/Jobs/Commands antes de agendar o worker; retorna `pending`. |
+| `RunYAML(ctx, []byte)` / `RunFile(ctx, path)` | Compatibilidade síncrona para `action-v1`: usa `SubmitYAML` + `WaitAction`, normalizando caminhos relativos do arquivo. |
+| `WaitAction(ctx, id)` | Aguarda estado terminal em SQLite. Timeout do contexto afeta a espera; no wrapper síncrono o cancelamento do contexto cancela a Action. |
+| `CancelAction(ctx, id)` | Cancela uma Action ativa no mesmo processo. |
+| `GetAction(ctx, id)` / `ListActions(ctx, ActionFilter, Page)` | Recuperam cabeçalhos de Actions, com filtro e paginação. |
+| `GetActionDetails(ctx, id)` / `ListActionDetails(ctx, filter, page)` | Recuperam origem, VM, cleanup, Jobs, Commands e eventos. |
+| `GetJob(ctx, id)` / `ListJobs(ctx, actionID)` | Consultas de Jobs. |
+| `GetCommand(ctx, id)` / `ListCommands(ctx, jobID)` | Consultas de Commands. |
+| `ListCommandLogs(ctx, commandID, cursor)` | Até 500 linhas por chamada; cursor `LineNumber` monotônico. |
+| `ListCommandOutputs(ctx, commandID, OutputFilter, Page)` | Chunks registrados por stream, paginados por ID. |
+| `ListRuntimeEvents(ctx, actionID, Page)` | Eventos de runtime por cursor. |
+| `RegisterVMProfile(ctx, ProfileRequest)` | Cadastro de profile InsulaVM usando imagem QCOW2 autorizada. |
+| `ListVMProfiles(ctx)` / `GetVMProfile(ctx, name)` | Consulta perfis InsulaVM. |
+| `ListVMImages(ctx)` | Lista imagens regulares na pasta administrativa. |
+| `ReconcileInterrupted(ctx)` | Tenta cleanup das VMs de Actions terminais com estado pendente/falho. |
+| `ImportLegacyHistory(ctx, path)` | Arquiva e normaliza as cinco tabelas legadas do SQLite anterior, sem alterá-lo. |
+| `ListLegacyRecords(ctx, source, table, Page)` | Consulta os dados originais tipados. |
+| `GetLegacyActionID(ctx, source, oldID)` | Resolve ID legado para UUIDv7 consumível por `GetActionDetails`. |
 
-`RunYAML(ctx, []byte)` e `RunFile(ctx, path)` permanecem como APIs locais **síncronas** do formato `action-v1`, preservadas para compatibilidade. O pacote `legacy` utiliza esquemas antigos e não é o caminho recomendado para novas integrações.
+## Formatos, resultados e erros
 
-## Resultado e estado
+Use `SubmitRequest.Format=FormatGitMasterV1` para YAML `version: 1` de `.gitmaster/workflow/`; `FormatActionV1` seleciona `schema_version: 1`. Não existe detecção ou tradução implícita. `ActionOrigin` descreve `clone_id`, SHA completo, branch, tipo de evento, `event_id` e workflow.
 
-`SubmitYAML` retorna `Action.ID` UUIDv7 e `Status=pending` após persistência; `pending` significa **enfileirada, não aprovada**. Workers configuráveis usam esse registro e atualizam status e eventos. `WaitAction` retorna uma Action concluída mesmo quando `Status=failed`: consulte `ErrorMessage` e detalhes para diagnóstico.
+`SubmitYAML` retorna um ID persistido; sucesso somente após `WaitAction` devolver `Status=succeeded`. Falhas de VM e comandos tornam o status `failed`, mas a API assíncrona **não transforma automaticamente um estado final de falha em erro Go**. Verifique `Action.Status` e `GetActionDetails`. Wrappers síncronos retornam Action e `error` em falha terminal.
 
-`Page{Limit, AfterID}` aceita `Limit` até 500; logs usam número de linha `uint64`. Cada VM tem seu próprio ID registrado em `ActionDetails.VMID`. Falhas no teardown geram `CleanupStatus=failed` e falha final da Action.
+`Page{Limit, AfterID}` usa limite 1..500, cursor por ID; `Action.CursorID` suporta paginação de lista decrescente. O runtime preserva `vm_id` para diagnóstico e estado de cleanup. `*sql.DB` não é exposto pela API `Engine`.
 
 ## Referências
 
-[Contrato GitMaster](../../contratos/CONTR-003-gitmaster-workflow.md) · [SQLite](../../persistencia/PERS-001-registro-execucoes.md) · [Guia](../../guias/GUIA-008-integracao-gitmaster.md)
+[Contrato de workflow](../../contratos/CONTR-003-gitmaster-workflow.md) · [Manifesto local](../../contratos/CONTR-001-configuracao-action.md) · [SQLite](../../persistencia/PERS-001-registro-execucoes.md) · [Guia](../../guias/GUIA-008-integracao-gitmaster.md)

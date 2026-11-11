@@ -8,9 +8,11 @@ import (
     "fmt"
     "os"
     "path/filepath"
-    "strings"
     "sync"
+    "syscall"
     "time"
+
+    "gopkg.in/yaml.v3"
 )
 
 type Options struct {
@@ -26,19 +28,34 @@ type Engine struct {
     options Options
     mu sync.Mutex
     active map[string]context.CancelFunc
+    lockFile *os.File
     asyncSlots chan struct{}
     closed bool
 }
+// New exclusively owns an actions.db file for the life of this Engine.
+// A nonblocking advisory lock prevents a second process from marking live
+// actions as interrupted during startup recovery.
 func New(options Options)(*Engine,error){
+    if options.DatabasePath=="" {return nil,errors.New("DatabasePath is required")}
     if options.Workers<0||options.Workers>32{return nil,errors.New("Workers must be 0..32")}
     workers:=options.Workers
     if workers==0{workers=2}
+    lock,err:=os.OpenFile(options.DatabasePath+".lock",os.O_CREATE|os.O_RDWR,0600)
+    if err!=nil{return nil,fmt.Errorf("open actions lock: %w",err)}
+    if err=syscall.Flock(int(lock.Fd()),syscall.LOCK_EX|syscall.LOCK_NB);err!=nil{
+        _=lock.Close()
+        return nil,fmt.Errorf("actions database is already owned by another Engine: %w",err)
+    }
+    release:=func(){
+        _=syscall.Flock(int(lock.Fd()),syscall.LOCK_UN)
+        _=lock.Close()
+    }
     db,err:=openStore(options.DatabasePath)
-    if err!=nil{return nil,err}
-    if err=ensureServiceSchema(db);err!=nil{_ = db.Close();return nil,err}
-    if err=ensureLegacyArchive(db);err!=nil{_ = db.Close();return nil,err}
-    engine:=&Engine{db:db,options:options,active:map[string]context.CancelFunc{},asyncSlots:make(chan struct{},workers)}
-    if err=engine.recoverInterrupted(context.Background());err!=nil{_ = db.Close();return nil,err}
+    if err!=nil{release();return nil,err}
+    if err=ensureServiceSchema(db);err!=nil{_ = db.Close();release();return nil,err}
+    if err=ensureLegacyArchive(db);err!=nil{_ = db.Close();release();return nil,err}
+    engine:=&Engine{db:db,lockFile:lock,options:options,active:map[string]context.CancelFunc{},asyncSlots:make(chan struct{},workers)}
+    if err=engine.recoverInterrupted(context.Background());err!=nil{_ = db.Close();release();return nil,err}
     return engine,nil
 }
 func(e *Engine) Close()error{
@@ -47,7 +64,9 @@ func(e *Engine) Close()error{
     if len(e.active)>0{return errors.New("cannot close Engine while actions are running")}
     if e.closed{return nil}
     e.closed=true
-    return e.db.Close()
+    closeErr:=e.db.Close()
+    unlockErr:=syscall.Flock(int(e.lockFile.Fd()),syscall.LOCK_UN)
+    return errors.Join(closeErr,unlockErr,e.lockFile.Close())
 }
 func(e *Engine) assertOpen()error{
     e.mu.Lock()
@@ -115,154 +134,47 @@ type ActionFilter struct{Status string;CloneID string}
 type Page struct{Limit int; AfterID int64}
 type OutputFilter struct{StreamType string}
 
-func(e *Engine) RunFile(ctx context.Context,path string)(*Action,error){
-    data,err:=os.ReadFile(path)
-    if err!=nil{return nil,err}
-    abs,err:=filepath.Abs(path)
-    if err!=nil{return nil,err}
-    return e.run(ctx,data,filepath.Dir(abs))
+// RunFile uses the same durable executor as SubmitYAML. Relative imports are
+// resolved against the YAML file before submitting its normalized manifest.
+func (e *Engine) RunFile(ctx context.Context, filename string) (*Action, error) {
+    info, err := os.Lstat(filename)
+    if err != nil { return nil, err }
+    if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+        return nil, errors.New("manifest must be a regular YAML file up to 1 MiB")
+    }
+    data, err := os.ReadFile(filename)
+    if err != nil { return nil, err }
+    absolute, err := filepath.Abs(filename)
+    if err != nil { return nil, err }
+    parsed, err := parseManifest(data, filepath.Dir(absolute))
+    if err != nil { return nil, err }
+    canonical, err := yaml.Marshal(parsed)
+    if err != nil { return nil, err }
+    return e.RunYAML(ctx, canonical)
 }
-func(e *Engine) RunYAML(ctx context.Context,yaml []byte)(*Action,error){
-    return e.run(ctx,yaml,"")
-}
-func(e *Engine) run(ctx context.Context,data []byte,baseDir string)(*Action,error){
-    if err:=e.assertOpen();err!=nil{return nil,err}
-    m,err:=parseManifest(data,baseDir)
-    if err!=nil{return nil,err}
-    if e.options.InsulaConfigPath==""{
-        return nil,errors.New("InsulaConfigPath required to execute actions")
-    }
-    runtime,err:=NewRuntime(e.options.InsulaConfigPath,e.options.StartupScripts)
-    if err!=nil{return nil,err}
-    if err=runtime.Profile(m.VM.Profile);err!=nil{return nil,fmt.Errorf("InsulaVM profile: %w",err)}
-    if path:=runtime.Workspace();!strings.HasPrefix(path,"/")||path=="/"{
-        return nil,errors.New("InsulaVM guest.destination must be an absolute non-root directory")
-    }
-    id,err:=uuidv7()
-    if err!=nil{return nil,err}
-    tx,err:=e.db.BeginTx(ctx,nil)
-    if err!=nil{return nil,err}
-    defer tx.Rollback()
-    if _,err=tx.ExecContext(ctx,`INSERT INTO actions(id,name,status,created_at)VALUES(?,?,?,?)`,
-        id,m.Action.Name,"pending",timestamp());err!=nil{return nil,err}
-    jobs:=make([]string,0,len(m.Action.Jobs))
-    commands:=make([][]string,0,len(m.Action.Jobs))
-    for j,job:=range m.Action.Jobs {
-        jid,err:=uuidv7()
-        if err!=nil{return nil,err}
-        jobs=append(jobs,jid)
-        if _,err=tx.ExecContext(ctx,`INSERT INTO jobs(id,action_id,name,position,allow_failure,status)
-            VALUES(?,?,?,?,?,?)`,jid,id,job.Name,j,job.AllowFailure,"pending");err!=nil{return nil,err}
-        cmdIDs:=make([]string,0,len(job.Commands))
-        for k,cmd:=range job.Commands{
-            cid,err:=uuidv7()
-            if err!=nil{return nil,err}
-            if _,err=tx.ExecContext(ctx,`INSERT INTO commands(id,job_id,position,command_text,status)
-                VALUES(?,?,?,?,?)`,cid,jid,k,cmd,"pending");err!=nil{return nil,err}
-            cmdIDs=append(cmdIDs,cid)
+
+// RunYAML is the synchronous action-v1 compatibility wrapper. All VM work,
+// snapshot checks, SQL writes and cleanup are handled by the async executor.
+func (e *Engine) RunYAML(ctx context.Context, data []byte) (*Action, error) {
+    action, err := e.SubmitYAML(ctx, SubmitRequest{YAML: data, Format: FormatActionV1})
+    if err != nil { return nil, err }
+    finished, err := e.WaitAction(ctx, action.ID)
+    if err != nil {
+        if ctx.Err() != nil {
+            _ = e.CancelAction(context.Background(), action.ID)
+            cleanupCtx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+            _, _ = e.WaitAction(cleanupCtx, action.ID)
+            cancel()
         }
-        commands=append(commands,cmdIDs)
+        return nil, err
     }
-    if err=tx.Commit();err!=nil{return nil,err}
-    runCtx,cancel:=context.WithCancel(ctx)
-    e.mu.Lock()
-    if e.closed {e.mu.Unlock();cancel();return nil,errors.New("Engine closed while scheduling")}
-    e.active[id]=cancel
-    e.mu.Unlock()
-    defer func(){
-        cancel()
-        e.mu.Lock()
-        delete(e.active,id)
-        e.mu.Unlock()
-    }()
-    if err=e.setStatus(runCtx,"actions",id,"starting","");err!=nil{return nil,err}
-    vmID:=""
-    runErr:=func()error{
-        var err error
-        vmID,err=runtime.Start(runCtx,m.VM.Profile,nil)
-        if err!=nil{return fmt.Errorf("start VM: %w",err)}
-        if err=e.setStatus(runCtx,"actions",id,"running","");err!=nil{return err}
-        if len(m.Action.Imports)>0 {
-            // DeployToVM requires an administrator-owned post-import script.
-            // The untrusted manifest never selects script content or its path.
-            postImport,err:=os.CreateTemp("","gitmaster-actions-deploy-*.sh")
-            if err!=nil{return err}
-            scriptPath:=postImport.Name()
-            defer os.Remove(scriptPath)
-            if _,err=postImport.WriteString("#!/bin/sh\nset -eu\ntest -d .\n");err!=nil{
-                _=postImport.Close();return err
-            }
-            if err=postImport.Close();err!=nil{return err}
-            for _,item:=range m.Action.Imports {
-                if err=runtime.Deploy(runCtx,vmID,item.Source,scriptPath,nil);err!=nil{
-                    return fmt.Errorf("deploy %q: %w",item.Source,err)
-                }
-            }
+    if finished.Status != "succeeded" {
+        if finished.ErrorMessage != nil && *finished.ErrorMessage != "" {
+            return finished, fmt.Errorf("action %s: %s", finished.Status, *finished.ErrorMessage)
         }
-        for j,job:=range m.Action.Jobs{
-            if err=e.setStatus(runCtx,"jobs",jobs[j],"running","");err!=nil{return err}
-            failed:=false
-            for k,cmd:=range job.Commands {
-                commandID:=commands[j][k]
-                if err=e.setStatus(runCtx,"commands",commandID,"running","");err!=nil{return err}
-                writer:=NewOutputWriter(func(stream,line string)error{
-                    if stream=="system" {stream="stdout"}
-                    // ExecVM provides decorated text, not native byte-exact streams.
-                    return e.appendOutput(runCtx,commandID,stream,[]byte(line+"\n"))
-                })
-                exit,commandErr:=runtime.Command(runCtx,vmID,runtime.Workspace(),cmd,writer)
-                commandErr=errors.Join(commandErr,writer.Flush())
-                var code any
-                if exit>=0 {code=exit}
-                var kind any
-                if commandErr!=nil {
-                    if exit>=0{kind="remote_exit"}else{kind="infrastructure"}
-                }
-                _,dbErr:=e.db.ExecContext(context.Background(),
-                    `UPDATE commands SET exit_code=?,failure_kind=? WHERE id=?`,
-                    code,kind,commandID)
-                if dbErr!=nil{return dbErr}
-                if commandErr!=nil {
-                    failed=true
-                    if err=e.setStatus(context.Background(),"commands",commandID,"failed",commandErr.Error());err!=nil{return err}
-                    if !job.AllowFailure {
-                        _ = e.setStatus(context.Background(),"jobs",jobs[j],"failed",commandErr.Error())
-                        return fmt.Errorf("job %q command %d: %w",job.Name,k,commandErr)
-                    }
-                }else{
-                    if err=e.setStatus(runCtx,"commands",commandID,"succeeded","");err!=nil{return err}
-                }
-            }
-            if failed&&job.AllowFailure {
-                // Tolerated remote exit failures are still visible on commands.
-                if err=e.setStatus(runCtx,"jobs",jobs[j],"succeeded","allowed command failure");err!=nil{return err}
-            }else{
-                if err=e.setStatus(runCtx,"jobs",jobs[j],"succeeded","");err!=nil{return err}
-            }
-        }
-        return nil
-    }()
-    if vmID!="" {
-        cleanupCtx,stop:=context.WithTimeout(context.Background(),60*time.Second)
-        stopErr:=runtime.Stop(cleanupCtx,vmID)
-        stop()
-        runErr=errors.Join(runErr,stopErr)
+        return finished, fmt.Errorf("action %s", finished.Status)
     }
-    status:="succeeded"
-    if runErr!=nil{status="failed"}
-    if errors.Is(runCtx.Err(),context.Canceled)||errors.Is(runCtx.Err(),context.DeadlineExceeded){
-        status="cancelled"
-        if runErr==nil{runErr=runCtx.Err()}
-    }
-    finalCtx,cancelFinal:=context.WithTimeout(context.Background(),10*time.Second)
-    defer cancelFinal()
-    message:=""
-    if runErr!=nil{message=runErr.Error()}
-    finishErr:=e.setStatus(finalCtx,"actions",id,status,message)
-    runErr=errors.Join(runErr,finishErr)
-    action,readErr:=e.GetAction(finalCtx,id)
-    if action!=nil{action.VMID=vmID}
-    return action,errors.Join(runErr,readErr)
+    return finished, nil
 }
 func(e *Engine) CancelAction(ctx context.Context,id string)error{
     if err:=e.assertOpen();err!=nil{return err}
