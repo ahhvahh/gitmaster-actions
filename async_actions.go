@@ -558,6 +558,10 @@ func (e *Engine) runSubmittedAction(ctx context.Context, id string, plan executi
 		}
 		results[j.Name] = status
 		if infrastructure {
+			// Preserve cancellation: a canceled VM command is not a generic infrastructure failure.
+			if cancelErr := ctx.Err(); cancelErr != nil {
+				return cancelErr
+			}
 			return fmt.Errorf("infrastructure failure in job %s", j.Name)
 		}
 	}
