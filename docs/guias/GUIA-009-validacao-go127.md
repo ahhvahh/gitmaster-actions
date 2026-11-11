@@ -17,6 +17,7 @@ Verificar o módulo Go localmente com a versão suportada e acompanhar o resulta
 ```bash
 go version
 go mod download
+go mod tidy -diff
 go test -race -count=1 ./...
 go vet ./...
 ```
