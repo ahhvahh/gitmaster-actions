@@ -17,10 +17,10 @@ func TestActionSchemaAndIdempotency(t *testing.T){
     for _,statement:=range []string{
         `PRAGMA foreign_keys=ON`,
         `CREATE TABLE clones(id TEXT PRIMARY KEY)`,
-        `CREATE TABLE action_events(event_id TEXT PRIMARY KEY)`,
+        `CREATE TABLE action_events(event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL)`,
         `CREATE TABLE tool_executions(execution_id TEXT PRIMARY KEY)`,
         `INSERT INTO clones(id) VALUES('clone-1')`,
-        `INSERT INTO action_events(event_id) VALUES('evt-1')`,
+        `INSERT INTO action_events(event_id,event_type) VALUES('evt-1','commit')`,
     }{
         if _,err=db.ExecContext(ctx,statement);err!=nil{t.Fatal(err)}
     }
