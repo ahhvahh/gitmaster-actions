@@ -10,9 +10,9 @@ import (
 func(e *Engine) GetAction(ctx context.Context,id string)(*Action,error){
     if err:=e.assertOpen();err!=nil{return nil,err}
     var a Action
-    err:=e.db.QueryRowContext(ctx,`SELECT id,name,status,created_at,started_at,finished_at,error_message
+    err:=e.db.QueryRowContext(ctx,`SELECT id,name,status,created_at,started_at,finished_at,error_message,COALESCE(vm_id,'')
        FROM actions WHERE id=?`,id).
-       Scan(&a.ID,&a.Name,&a.Status,&a.CreatedAt,&a.StartedAt,&a.FinishedAt,&a.ErrorMessage)
+       Scan(&a.ID,&a.Name,&a.Status,&a.CreatedAt,&a.StartedAt,&a.FinishedAt,&a.ErrorMessage,&a.VMID)
     if err!=nil{return nil,err}
     a.engine=e
     return &a,nil
@@ -21,22 +21,17 @@ func(e *Engine) ListActions(ctx context.Context,filter ActionFilter,page Page)([
     if err:=e.assertOpen();err!=nil{return nil,err}
     limit:=page.Limit
     if limit==0{limit=100}
-    if limit<1||limit>500{return nil,errors.New("limit must be 1..500")}
-    var rows *sql.Rows
-    var err error
-    if filter.Status==""{
-        rows,err=e.db.QueryContext(ctx,`SELECT id,name,status,created_at,started_at,finished_at,error_message
-           FROM actions ORDER BY created_at DESC,id DESC LIMIT ?`,limit)
-    }else{
-        rows,err=e.db.QueryContext(ctx,`SELECT id,name,status,created_at,started_at,finished_at,error_message
-           FROM actions WHERE status=? ORDER BY created_at DESC,id DESC LIMIT ?`,filter.Status,limit)
-    }
+    if limit<1||limit>500||page.AfterID<0{return nil,errors.New("invalid action pagination")}
+    rows,err:=e.db.QueryContext(ctx,`SELECT rowid,id,name,status,created_at,started_at,finished_at,error_message,COALESCE(vm_id,'')
+       FROM actions WHERE (?='' OR status=?) AND (?='' OR clone_id=?) AND (?=0 OR rowid<?)
+       ORDER BY rowid DESC LIMIT ?`,
+       filter.Status,filter.Status,filter.CloneID,filter.CloneID,page.AfterID,page.AfterID,limit)
     if err!=nil{return nil,err}
     defer rows.Close()
     out:=[]*Action{}
     for rows.Next(){
         a:=&Action{engine:e}
-        if err:=rows.Scan(&a.ID,&a.Name,&a.Status,&a.CreatedAt,&a.StartedAt,&a.FinishedAt,&a.ErrorMessage);err!=nil{return nil,err}
+        if err:=rows.Scan(&a.CursorID,&a.ID,&a.Name,&a.Status,&a.CreatedAt,&a.StartedAt,&a.FinishedAt,&a.ErrorMessage,&a.VMID);err!=nil{return nil,err}
         out=append(out,a)
     }
     return out,rows.Err()

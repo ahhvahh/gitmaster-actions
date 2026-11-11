@@ -1,0 +1,27 @@
+# Exemplo: colocar no projeto consumidor em .gitmaster/workflow/go-ci.yaml
+version: 1
+name: go-ci
+vm_profile: ci-go
+triggers:
+  - event: commit
+    branches: [develop, main]
+  - event: push
+    branches: [develop, main]
+jobs:
+  lint:
+    steps:
+      - name: Analise estatica
+        working_directory: src/go
+        run: go vet ./...
+  unit:
+    needs: [lint]
+    steps:
+      - name: Testes unitarios
+        working_directory: src/go
+        run: go test ./...
+  build:
+    needs: [unit]
+    steps:
+      - name: Compilacao
+        working_directory: src/go
+        run: go build ./...

@@ -1,21 +1,19 @@
 <!-- A-BIOMA-DOC-STANDARD -->
-<!-- A-BIOMA-DOC-REVISADO -->
 
 # Documentação — GitMaster Actions
 
-**Estado:** biblioteca Go e CLI inicial presentes no repositório, com validação de build e InsulaVM real ainda pendente. **Não é serviço nem daemon; a CLI é opcional.** Convenção A-Bioma Doc Standard, sem alegar certificação.
+Uma fonte por contrato e uma distinção explícita entre código implementado e dependências ainda não validadas em VM real.
 
-| Documento | Fonte canônica de |
+| Documento | Assunto |
 | --- | --- |
-| [Referências históricas migradas](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Contratos e fluxos anteriores do GitMaster, conservados para auditoria e migração |
-| [ARQ-002 — Separação GitMaster/Actions](arquitetura/ARQ-002-separacao-gitmaster.md) | Responsabilidades, contrato Go e compatibilidade SQLite |
-| [ARQ-001 — Arquitetura](arquitetura/ARQ-001-executor-actions.md) | Componentes, dependências e isolamento |
-| [INTF-GO-001 — API pública](interfaces/go/INTF-GO-001-biblioteca-publica.md) | `New`, `RunYAML`, `RunFile`, navegação por objetos e logs incrementais |
-| [INTF-TERM-001 — CLI de testes](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Sintaxe, comandos, parâmetros, STDIO e códigos de saída |
-| [CONTR-001 — YAML](contratos/CONTR-001-configuracao-action.md) | Estrutura e validação do manifesto |
-| [CONTR-002 — Criar perfil](contratos/CONTR-002-criacao-perfil.md) | Nome, fonte QCOW2 ou VM, RAM, CPU e acesso à internet |
-| [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Tabelas, IDs, índices, relacionamentos |
-| [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Ordem, falhas, cancelamento e cleanup |
+| [CONTR-001 — Action local](contratos/CONTR-001-configuracao-action.md) | Manifesto `action-v1` usado pela CLI legada |
+| [CONTR-003 — Workflow GitMaster](contratos/CONTR-003-gitmaster-workflow.md) | Formato `gitmaster-workflow-v1`, eventos e dependências |
+| [INTF-GO-001 — API](interfaces/go/INTF-GO-001-biblioteca-publica.md) | Submissão, consultas, perfis, cancelamento e importação |
+| [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Esquema, migrações e histórico |
+| [GUIA-008 — Integração](guias/GUIA-008-integracao-gitmaster.md) | Configuração e ligação sem modificar GitMaster |
+| [ARQ-001 — Executor](arquitetura/ARQ-001-executor-actions.md) | Arquitetura e isolamento, histórico da implementação inicial |
+| [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Fluxo inicial, sujeito às atualizações do contrato assíncrono |
+| [INTF-TERM-001 — CLI](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Modo local existente |
+| [Documentação migrada](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Referências históricas preservadas |
 
-**Criação de perfis:** contrato proposto, sem implementação Go; rede por perfil e clone não destrutivo requerem melhorias no InsulaVM. **Ambiente:** uma Action usa uma VM clonada de perfil existente no InsulaVM local; os Jobs pertencem diretamente à Action. O banco SQLite não armazena dados da VM e não há recuperação após queda/reinício do servidor. **Dependência pendente:** STDIO nativo separado e bytes exatos do guest; o adaptador atual interpreta a saída textual formatada pelo InsulaVM.
-Os exemplos de `config.yaml` e `profile-ci-go.yaml` do InsulaVM estão agora em [`examples/insula/`](../examples/insula/config.yaml); o script administrativo de bootstrap está em [`examples/bootstrap/`](../examples/bootstrap/ci-go-bootstrap.sh.example).
+**Estado:** o módulo especifica Go 1.27. Testes KVM/Libvirt não executados nesta entrega. A biblioteca principal usa seu SQLite próprio; o pacote `legacy` permanece para compatibilidade e requer migração explícita dos dados antigos.

@@ -17,18 +17,29 @@ type Options struct {
     DatabasePath string
     InsulaConfigPath string
     StartupScripts map[string]string
+    ImagesDir string
+    Workers int
+    RuntimeFactory func() (Runtime,error)
 }
 type Engine struct {
     db *sql.DB
     options Options
     mu sync.Mutex
     active map[string]context.CancelFunc
+    asyncSlots chan struct{}
     closed bool
 }
 func New(options Options)(*Engine,error){
+    if options.Workers<0||options.Workers>32{return nil,errors.New("Workers must be 0..32")}
+    workers:=options.Workers
+    if workers==0{workers=2}
     db,err:=openStore(options.DatabasePath)
     if err!=nil{return nil,err}
-    return &Engine{db:db,options:options,active:map[string]context.CancelFunc{}},nil
+    if err=ensureServiceSchema(db);err!=nil{_ = db.Close();return nil,err}
+    if err=ensureLegacyArchive(db);err!=nil{_ = db.Close();return nil,err}
+    engine:=&Engine{db:db,options:options,active:map[string]context.CancelFunc{},asyncSlots:make(chan struct{},workers)}
+    if err=engine.recoverInterrupted(context.Background());err!=nil{_ = db.Close();return nil,err}
+    return engine,nil
 }
 func(e *Engine) Close()error{
     e.mu.Lock()
@@ -54,6 +65,7 @@ func uuidv7()(string,error){
     return fmt.Sprintf("%x-%x-%x-%x-%x",b[:4],b[4:6],b[6:8],b[8:10],b[10:]),nil
 }
 type Action struct {
+    CursorID int64 `json:"cursor_id"`
     ID string `json:"id"`
     Name string `json:"name"`
     Status string `json:"status"`
@@ -99,7 +111,7 @@ type CommandOutput struct{
     Payload []byte `json:"payload"`
     CapturedAt time.Time `json:"captured_at"`
 }
-type ActionFilter struct{Status string}
+type ActionFilter struct{Status string;CloneID string}
 type Page struct{Limit int; AfterID int64}
 type OutputFilter struct{StreamType string}
 

@@ -1,217 +1,37 @@
 <!-- A-BIOMA-DOC-STANDARD -->
-<!-- A-BIOMA-DOC-REVISADO -->
 
-# PERS-001 — Registro de Actions, jobs, comandos e streams no SQLite
-
-**Estado:** implementação SQLite inicial aplicada por `openStore` na inicialização da biblioteca. A DDL detalhada abaixo permanece contrato de referência e não representa uma cópia literal das migrações atuais. Este documento é a fonte canônica de entidades, tipos, relacionamentos, estados e índices para o GitMaster Actions.
+# PERS-001 — SQLite exclusivo para Actions
 
 ## Objetivo
 
-O GitMaster Actions administra o SQLite e disponibiliza consultas somente pelos objetos da API [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md). O histórico guarda os estados e logs da execução, **não** a origem/configuração da VM, repositório, caminho ou hash do YAML.
+O `Engine` gerencia `actions.db`, sem fornecer `*sql.DB` ao consumidor. `New` aplica migrações **aditivas** sobre as tabelas anteriores, preservando IDs e saídas preexistentes. A única responsabilidade do GitMaster é fornecer YAML e metadados de origem.
 
-Persistir localmente a cadeia **Action → job → comando → evento bruto de STDIO**, mais uma projeção persistida por linha para consulta incremental. O identificador da Action e o de cada job devem ser **UUIDv7 distintos**. Cada comando recebe UUIDv7 para correlação; cada chunk de stream recebe um inteiro autoincremental. O UUID da VM pertence ao InsulaVM e é mantido apenas durante a execução no GitMaster Actions, sem coluna no banco desta biblioteca.
+## Tabelas
 
-## Modelo de relacionamento
-
-```mermaid
-erDiagram
-    actions ||--o{ jobs : contem
-    jobs ||--o{ commands : executa
-    commands ||--o{ command_outputs : produz
-    commands ||--o{ command_log_lines : indexa
-    actions {
-        TEXT id PK
-        TEXT name
-        TEXT status
-        TEXT created_at
-    }
-    jobs {
-        TEXT id PK
-        TEXT action_id FK
-        TEXT name
-        INTEGER position
-        TEXT status
-    }
-    commands {
-        TEXT id PK
-        TEXT job_id FK
-        INTEGER position
-        TEXT command_text
-        INTEGER exit_code
-    }
-    command_outputs {
-        INTEGER id PK
-        TEXT command_id FK
-        INTEGER sequence_no
-        TEXT stream_type
-        BLOB payload
-    }
-    command_log_lines {
-        TEXT command_id PK, FK
-        INTEGER line_no PK
-        TEXT stream_type
-        BLOB payload
-    }
-```
-
-`jobs` guarda o cabeçalho e o estado do **log de execução de cada job**. A tabela `commands` guarda cada comando enviado à VM, e `command_outputs` guarda os bytes lidos ou escritos. A quinta tabela `command_log_lines` mantém uma projeção por linha de comando para consultas incrementais; `command_outputs` conserva os bytes brutos e pode ser reconstruída sem perda.
-
-## DDL proposto — SQLite
-
-```sql
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
-
-CREATE TABLE actions (
-    id           TEXT PRIMARY KEY NOT NULL,
-    name         TEXT NOT NULL,
-    status       TEXT NOT NULL CHECK (status IN
-                 ('pending','starting','running','succeeded','failed','cancelled')),
-    created_at   TEXT NOT NULL,
-    started_at   TEXT,
-    finished_at  TEXT,
-    error_message TEXT
-);
-
-CREATE TABLE jobs (
-    id            TEXT PRIMARY KEY NOT NULL,
-    action_id     TEXT NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
-    name          TEXT NOT NULL,
-    position      INTEGER NOT NULL CHECK (position >= 0),
-    allow_failure INTEGER NOT NULL DEFAULT 0 CHECK (allow_failure IN (0,1)),
-    status        TEXT NOT NULL CHECK (status IN
-                  ('pending','running','succeeded','failed','skipped','cancelled')),
-    started_at    TEXT,
-    finished_at   TEXT,
-    error_message TEXT,
-    UNIQUE (action_id, position),
-    UNIQUE (action_id, name)
-);
-
-CREATE TABLE commands (
-    id            TEXT PRIMARY KEY NOT NULL,
-    job_id        TEXT NOT NULL REFERENCES jobs(id) ON DELETE RESTRICT,
-    position      INTEGER NOT NULL CHECK (position >= 0),
-    command_text  TEXT NOT NULL,
-    status        TEXT NOT NULL CHECK (status IN
-                  ('pending','running','succeeded','failed','skipped','cancelled')),
-    exit_code     INTEGER,
-    failure_kind  TEXT CHECK (failure_kind IN ('remote_exit','infrastructure','storage','cancelled')),
-    error_message TEXT,
-    started_at    TEXT,
-    finished_at   TEXT,
-    UNIQUE (job_id, position)
-);
-
-CREATE TABLE command_outputs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    command_id   TEXT NOT NULL REFERENCES commands(id) ON DELETE RESTRICT,
-    sequence_no  INTEGER NOT NULL CHECK (sequence_no >= 0),
-    stream_type  TEXT NOT NULL CHECK (stream_type IN ('stdin','stdout','stderr')),
-    payload      BLOB NOT NULL,
-    captured_at  TEXT NOT NULL,
-    UNIQUE (command_id, sequence_no)
-);
-
-CREATE TABLE command_log_lines (
-    command_id   TEXT NOT NULL REFERENCES commands(id) ON DELETE RESTRICT,
-    line_no      INTEGER NOT NULL CHECK (line_no >= 1),
-    stream_type  TEXT NOT NULL CHECK (stream_type IN ('stdin','stdout','stderr')),
-    payload      BLOB NOT NULL,
-    captured_at  TEXT NOT NULL,
-    PRIMARY KEY (command_id, line_no)
-);
-
-CREATE INDEX idx_jobs_action_id ON jobs(action_id);
-CREATE INDEX idx_commands_job_id ON commands(job_id);
-CREATE INDEX idx_command_outputs_command_id ON command_outputs(command_id, sequence_no);
-CREATE INDEX idx_actions_status_created ON actions(status, created_at);
-```
-
-A instrução `PRAGMA foreign_keys = ON` precisa ser aplicada **em cada conexão**. Datas são strings UTC RFC3339/RFC3339Nano geradas pelo aplicativo; IDs UUIDv7 usam representação textual canônica minúscula (36 caracteres). A aplicação deve validar UUIDs antes da persistência. O DDL acima é uma **proposta de migração**, não arquivo de migração já executado.
-
-## Campos, cardinalidade e origem
-
-| Tabela | Identificador | Vinculação | Conteúdo |
-| --- | --- | --- | --- |
-| `actions` | `id` UUIDv7 | Raiz | Nome, status, datas de início/fim e erro geral, sem configuração da VM |
-| `jobs` | `id` UUIDv7 | `action_id` | Nome, ordem, `allow_failure`, status, início/fim e mensagem de erro |
-| `commands` | `id` UUIDv7 | `job_id` | Uma linha por comando; texto, posição, exit code, erro e estado |
-| `command_outputs` | `id` INTEGER | `command_id` | Um registro por chunk recebido/enviado, tipo e bytes exatos |
-| `command_log_lines` | `(command_id, line_no)` | `command_id` | Uma linha completa (ou fragmento final), com cursor estável |
-
-O SQLite **não** registra YAML, repositório, origem do perfil, RAM/vCPU ou VMID. O VMID transita apenas em memória no retorno da execução. Não há mecanismo para recuperar ou retomar VMs após queda/reinício; um registro `running` pode refletir o último estado conhecido, não uma VM ainda ativa.
-
-## Eventos de I/O e integridade
-
-- `stream_type='stdin'`: **dados enviados do executor para a VM**, não resposta produzida pela VM. Só gravar com `logging.capture_stdin=true` para entradas autorizadas; padrão seguro é não persistir stdin.
-- `stream_type='stdout'`: bytes gerados pelo processo remoto em seu canal padrão.
-- `stream_type='stderr'`: bytes gerados pelo processo remoto em seu canal de erro.
-- `payload` é **BLOB**, não `TEXT`. **Limitação atual:** o InsulaVM fornece console textual decorado, portanto a captura via `ExecVM` não garante fidelidade binária do stdout/stderr original; essa garantia depende da futura API de streams nativos.
-- `sequence_no` cresce por comando (0, 1, 2, ...), atribuído por um gravador que serializa os eventos de I/O. A sequência representa a **ordem de captura no host**; não garante a ordem causal entre stdout e stderr na VM.
-- O gravador DEVE manter a ordem dos chunks **dentro de cada stream**. Separar escritores/leituras concorrentes e serializar os inserts para evitar colisão de sequência.
-- Inserir comandos antes dos chunks; registrar `exit_code` apenas quando o remoto informou um código confiável. Um processo que terminou com código não zero (`failure_kind='remote_exit'`) não deve ser confundido com erro SSH (`failure_kind='infrastructure'`).
-- Recomenda-se transação para criar a Action e seus jobs inicialmente; depois, gravar comandos e chunks incrementalmente para não perder todo o log ao ocorrer falha no meio da execução.
-- Falha em persistir chunks deve impedir declaração de sucesso; tentar registrar erro de armazenamento e encerrar o processamento com falha. Se o banco estiver indisponível, relatar a impossibilidade de registrar o estado, **sem fabricar logs**.
-- Não salvar credenciais, chaves SSH ou tokens em metadados. Os próprios comandos/streams podem expor segredos: definir acesso por UID/grupo, arquivo com permissão restrita, retenção e política de captura antes da produção.
-
-## Consulta incremental por linha
-
-O gravador recompõe linhas **separadamente por stream** a partir dos chunks; uma linha pode atravessar chunks. Ao observar LF (`0x0A`), persiste a linha incluindo esse byte, atribuindo um `line_no` global crescente por comando. Ao encerrar ou cancelar a execução, persiste também bytes finais sem LF. Antes disso, uma linha incompleta pode não estar visível. A ordem entre streams indica a captura no host, não causalidade garantida na VM.
-
-Os chunks brutos e as linhas derivadas devem ser persistidos de modo consistente por lote antes de divulgar um cursor. A retenção não deve remover linhas de uma Action ainda ativa, evitando lacunas na leitura incremental. A duplicação controlada de armazenamento é intencional: recuperação binária versus navegação por linha.
-
-`Command.Logs(ctx, skipLines)` retorna **no máximo 500 linhas** de número maior que `skipLines`. O valor `0` retorna a primeira página. `skipLines` é cursor lógico, **não** SQL `OFFSET`, para não percorrer as linhas anteriores. Sem linhas novas, retornar lista vazia.
-
-```sql
-SELECT line_no, stream_type, payload, captured_at
-FROM command_log_lines
-WHERE command_id = ? AND line_no > ?
-ORDER BY line_no ASC
-LIMIT 500;
-```
-
-Assinatura e campos de retorno: [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md).
-
-## Estados
-
-| Entidade | Estados | Regra |
+| Tabela | Chave | Conteúdo |
 | --- | --- | --- |
-| Action | `pending → starting → running → succeeded/failed/cancelled` | Sucedida somente se não houver falha fatal, com cleanup tratado |
-| Job | `pending → running → succeeded/failed/cancelled` ou `pending → skipped` | `allow_failure` tolera exit code remoto do job, mas registra o comando que falhou |
-| Command | `pending → running → succeeded/failed/cancelled` ou `pending → skipped` | `exit_code` fica nulo se não foi recebido |
+| `actions` | `id` UUIDv7 | Nome, status, timestamps, erro, `clone_id`, `commit_sha`, `event_id`, `event_type`, `branch`, `workflow_name`, `workflow_path`, `yaml_format`, `vm_profile`, `vm_id`, SHA256 do material, caminho privado temporário e estado/erro de cleanup |
+| `jobs` | `id` UUIDv7 | `action_id`, nome, ordem, dependências JSON, filtro/skip, timeout, status e timestamps |
+| `commands` | `id` UUIDv7 | `job_id`, step, diretório relativo, comando autorizado, posição, status, exit code, failure_kind, erro e timestamps |
+| `command_outputs` | `id` INTEGER | Chunks capturados de stdout/stderr (limitação: transporte textual decorado) |
+| `command_log_lines` | `(command_id,line_no)` | Projeção de linhas com cursores incrementais |
+| `runtime_events` | `id` INTEGER | Fases da execução, diagnóstico e cleanup por `action_id` |
+| `legacy_archive` | `id` INTEGER | Linhas das cinco tabelas legadas importadas, com valores tipados em JSON e BLOBs base64 |
 
-Em `allow_failure=true`, um comando pode estar `failed` e o job ser `succeeded` com falha tolerada; a informação detalhada permanece no histórico. Falha de infraestrutura nunca é tolerada implicitamente por `allow_failure`.
+Relacionamentos: `actions 1:N jobs 1:N commands 1:N outputs/log_lines`; `actions 1:N runtime_events`. SQLite ativa `foreign_keys`, WAL, `busy_timeout` e usa uma conexão serializada. Os nomes das tabelas de dados legados ficam isolados no arquivo `actions.db`, sem foreign keys para clones de GitMaster.
 
-## Exemplos de consulta (referência, ainda não executados)
+`idx_actions_origin_event` é UNIQUE em `(clone_id, commit_sha, workflow_path, event_type)` para origens informadas. Uma submissão idempotente retorna o mesmo ID e não inicia outra VM. `AfterID` em outputs/eventos representa cursor, não OFFSET.
 
-```sql
--- Listar jobs de uma Action por ordem
-SELECT id, name, status
-FROM jobs WHERE action_id = ? ORDER BY position;
+## Interrupção e retenção
 
--- Reconstruir stdout de um comando, concatenando BLOBs na ordem
-SELECT sequence_no, payload
-FROM command_outputs
-WHERE command_id = ? AND stream_type = 'stdout'
-ORDER BY sequence_no;
-```
+No próximo `New`, registros `pending`, `starting` ou `running` anteriores passam a `failed` com diagnóstico de interrupção. VMs cujos IDs foram persistidos ficam com `cleanup_status=pending` até `ReconcileInterrupted` tentar finalização. A biblioteca **não retoma** steps interrompidos e não garante cleanup da VM quando o ID nunca chegou a ser persistido.
 
-A aplicação que consulta deve concatenar os BLOBs no cliente (não supor que `group_concat` preserve bytes binários). Para reconstruir STDIN ou STDERR, trocar o valor do filtro `stream_type`.
+O material de execução é copiado antes do enqueue para `actions-material/` com permissões restritas e é removido ao concluir a Action. Permanece seu hash SHA256, não uma cópia do repositório. O consumidor deve fornecer snapshot imutável e seguro; políticas de retenção de logs e autorização de leitura cabem ao serviço consumidor.
 
-## Critérios de aceite futuros
+## Migração do histórico
 
-- Uma Action produz UUIDv7 próprio; VMID, quando criado, pertence ao InsulaVM e não é persistido no banco da Action.
-- Cada job recebe UUIDv7 único e pertence exatamente a uma Action.
-- Cada comando pertence exatamente a um job; cada chunk e cada linha pertence exatamente a um comando.
-- Após solicitar `skipLines=N`, nenhuma linha de número até N pode ser devolvida novamente.
-- Constraints impedem referências órfãs; a aplicação ativa foreign keys em todas as conexões.
-- Bytes de STDOUT/STDERR são reconstruídos exatamente e preservam ordem individual dos canais.
-- O histórico não desaparece quando a VM é encerrada ou o processo termina.
+`ImportLegacyHistory` abre um **SQLite antigo em modo somente leitura** e importa `action_runs`, `action_jobs`, `action_job_commands`, `action_command_responses`, `action_runtime_messages` para `legacy_archive`. Importações repetidas atualizam a mesma chave de origem, sem duplicar linhas. A API `ListLegacyRecords` recupera os registros completos, inclusive dados binários em base64. **A normalização desses registros no modelo `ActionDetails` ainda não foi implementada;** não desligar o modo legado do GitMaster antes de adaptar a leitura e validar a migração operacional.
 
 ## Referências
 
-- [FLUX-001 — Sequência](../fluxos/FLUX-001-execucao-action.md)
-- [CONTR-001 — Manifesto](../contratos/CONTR-001-configuracao-action.md)
-- [InsulaVM: transporte STDIO futuro](https://github.com/ahhvahh/InsulaVM/blob/main/docs/interfaces/CONTR-002-transporte-stdio.md)
+[API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Workflow](../contratos/CONTR-003-gitmaster-workflow.md)
