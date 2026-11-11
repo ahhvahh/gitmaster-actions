@@ -24,11 +24,21 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: '1.27.4'
-          cache: false # The repository does not currently commit go.sum.
+          cache: false # The lockfile will be generated once and committed.
       - name: Verify toolchain
         run: go version
       - name: Download module dependencies
         run: go mod download
+      - name: Resolve and normalize dependencies
+        run: go mod tidy
+      - name: Export module lockfiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: go127-module-lock
+          path: |
+            go.mod
+            go.sum
+          retention-days: 3
       - name: Run tests with race detector
         run: go test -race -count=1 ./...
       - name: Static analysis
