@@ -177,7 +177,7 @@ func(e *Engine) run(ctx context.Context,data []byte,baseDir string)(*Action,erro
             if err!=nil{return err}
             scriptPath:=postImport.Name()
             defer os.Remove(scriptPath)
-            if _,err=postImport.WriteString("#!/bin/sh\\nset -eu\\ntest -d .\\n");err!=nil{
+            if _,err=postImport.WriteString("#!/bin/sh\nset -eu\ntest -d .\n");err!=nil{
                 _=postImport.Close();return err
             }
             if err=postImport.Close();err!=nil{return err}
