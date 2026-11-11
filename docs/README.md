@@ -11,6 +11,7 @@ Uma fonte por contrato e uma distinção explícita entre código implementado e
 | [INTF-GO-001 — API](interfaces/go/INTF-GO-001-biblioteca-publica.md) | Submissão, consultas, perfis, cancelamento e importação |
 | [PERS-001 — SQLite](persistencia/PERS-001-registro-execucoes.md) | Esquema, migrações e histórico |
 | [GUIA-008 — Integração](guias/GUIA-008-integracao-gitmaster.md) | Configuração e ligação sem modificar GitMaster |
+| [GUIA-009 — Validação Go 1.27](guias/GUIA-009-validacao-go127.md) | Testes locais, CI complementar e limites KVM |
 | [ARQ-001 — Executor](arquitetura/ARQ-001-executor-actions.md) | Arquitetura e isolamento, histórico da implementação inicial |
 | [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Fluxo inicial, sujeito às atualizações do contrato assíncrono |
 | [INTF-TERM-001 — CLI](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Modo local existente |
