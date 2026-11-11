@@ -7,6 +7,7 @@
 
 | Documento | Fonte canônica de |
 | --- | --- |
+| [Referências históricas migradas](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Contratos e fluxos anteriores do GitMaster, conservados para auditoria e migração |
 | [ARQ-002 — Separação GitMaster/Actions](arquitetura/ARQ-002-separacao-gitmaster.md) | Responsabilidades, contrato Go e compatibilidade SQLite |
 | [ARQ-001 — Arquitetura](arquitetura/ARQ-001-executor-actions.md) | Componentes, dependências e isolamento |
 | [INTF-GO-001 — API pública](interfaces/go/INTF-GO-001-biblioteca-publica.md) | `New`, `RunYAML`, `RunFile`, navegação por objetos e logs incrementais |
@@ -17,3 +18,4 @@
 | [FLUX-001 — Execução](fluxos/FLUX-001-execucao-action.md) | Ordem, falhas, cancelamento e cleanup |
 
 **Criação de perfis:** contrato proposto, sem implementação Go; rede por perfil e clone não destrutivo requerem melhorias no InsulaVM. **Ambiente:** uma Action usa uma VM clonada de perfil existente no InsulaVM local; os Jobs pertencem diretamente à Action. O banco SQLite não armazena dados da VM e não há recuperação após queda/reinício do servidor. **Dependência pendente:** STDIO nativo separado e bytes exatos do guest; o adaptador atual interpreta a saída textual formatada pelo InsulaVM.
+Os exemplos de `config.yaml` e `profile-ci-go.yaml` do InsulaVM estão agora em [`examples/insula/`](../examples/insula/config.yaml); o script administrativo de bootstrap está em [`examples/bootstrap/`](../examples/bootstrap/ci-go-bootstrap.sh.example).
