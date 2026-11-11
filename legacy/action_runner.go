@@ -246,3 +246,9 @@ func isUUIDv7(value string) bool {
 	}
 	return true
 }
+
+// GuestWorkingDirectory is exported for consumers that validate untrusted
+// workflow working-directory paths before dispatching guest commands.
+func GuestWorkingDirectory(cloneID,relative string)(string,error){
+    return guestWorkingDirectory(cloneID,relative)
+}
