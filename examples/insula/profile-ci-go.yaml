@@ -1,0 +1,10 @@
+# REFERENCIA do profile.yaml GERADO pelo InsulaVM ao registrar um QCOW2.
+# Nao salvar diretamente na aplicacao e nao substituir o registro do perfil.
+# Local gerenciado: <storage.profiles>/ci-go/profile.yaml
+name: ci-go
+os: debian
+memory_mib: 4096
+vcpus: 2
+disk_gb: 20
+version: v001
+image: versions/v001/base.qcow2

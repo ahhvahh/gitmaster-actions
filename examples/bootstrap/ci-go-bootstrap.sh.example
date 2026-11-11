@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# GitMaster / InsulaVM: trusted administrator-owned first-boot script.
+# The InsulaVM library includes this file in Cloud-Init when creating a VM.
+# NEVER take this content from a Git checkout or .gitmaster/workflow YAML.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates git tar gzip make gcc
+
+# Install the exact Go/SDK version required by your test profile here.
+# Example: use a pre-frozen QCOW2 with an already verified toolchain.
+test -x /bin/bash
+command -v tar

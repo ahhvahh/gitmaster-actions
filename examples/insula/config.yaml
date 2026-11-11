@@ -1,0 +1,22 @@
+# Configuracao GLOBAL, administrada no host InsulaVM (fora de repositorios Git).
+# Perfis de sistema operacional sao cadastrados a partir de QCOW2 instalado.
+storage:
+  root: /var/lib/insulavm
+  profiles: profiles
+  runs: runs
+  logs: logs
+  database: insula.db
+
+virtualization:
+  provider: kvm
+  libvirt_uri: qemu:///system
+  network: default
+  default_disk_gb: 16
+
+ssh:
+  user: insula
+  connect_timeout_seconds: 60
+  sudo_mode: disabled
+
+guest:
+  destination: /tmp/gmaster
