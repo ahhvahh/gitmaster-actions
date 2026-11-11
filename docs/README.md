@@ -7,6 +7,7 @@
 
 | Documento | Fonte canônica de |
 | --- | --- |
+| [ARQ-002 — Separação GitMaster/Actions](arquitetura/ARQ-002-separacao-gitmaster.md) | Responsabilidades, contrato Go e compatibilidade SQLite |
 | [ARQ-001 — Arquitetura](arquitetura/ARQ-001-executor-actions.md) | Componentes, dependências e isolamento |
 | [INTF-GO-001 — API pública](interfaces/go/INTF-GO-001-biblioteca-publica.md) | `New`, `RunYAML`, `RunFile`, navegação por objetos e logs incrementais |
 | [INTF-TERM-001 — CLI de testes](interfaces/terminal/INTF-TERM-001-cli-testes.md) | Sintaxe, comandos, parâmetros, STDIO e códigos de saída |
