@@ -57,3 +57,15 @@ go vet ./...
 `ExecVM` do InsulaVM devolve console textual decorado, não streams binários nativos. Após uma queda do host, o executor marca Actions interrompidas e oferece `ReconcileInterrupted`, mas **não retoma comandos**. A integração antiga do GitMaster precisa ser atualizada em outro repositório para deixar de usar o pacote `legacy`.
 
 [Índice](docs/README.md) · [Arquitetura](docs/arquitetura/ARQ-001-executor-actions.md) · [YAML GitMaster](docs/contratos/CONTR-003-gitmaster-workflow.md) · [API Go](docs/interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Persistência](docs/persistencia/PERS-001-registro-execucoes.md) · [Migração](docs/guias/GUIA-008-integracao-gitmaster.md)
+## Layout e validação automatizada
+
+A implementação, testes e CLIs estão em [`src/`](src/); as fachadas [`api.go`](api.go) e [`legacy/api.go`](legacy/api.go) preservam as importações antigas dos consumidores (`github.com/ahhvahh/gitmaster-actions` e `/legacy`). Contratos e manuais permanecem em [`docs/`](docs/).
+
+```bash
+bash scripts/build.sh --output /tmp/gitmaster-actions
+bash scripts/test-unit.sh
+bash scripts/install-hooks.sh             # opcional: testa antes do commit local
+bash scripts/test-integration.sh --insula-config /etc/insulavm/config.yaml
+```
+
+O CI executa os testes unitários em cada **push/PR**; o teste integral (ISO Debian 13, perfil 500 MiB/1 vCPU, três comandos, validação de logs e cleanup) requer host KVM autorizado e é explicitamente manual. Veja [GUIA-010](docs/guias/GUIA-010-build-testes.md).

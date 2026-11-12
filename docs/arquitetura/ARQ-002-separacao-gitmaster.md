@@ -30,3 +30,6 @@ O pacote `legacy` foi mantido temporariamente para compatibilidade; o GitMaster 
 ## Referências
 
 [ARQ-001](ARQ-001-executor-actions.md) · [GUIA-008](../guias/GUIA-008-integracao-gitmaster.md) · [INTF-GO-001](../interfaces/go/INTF-GO-001-biblioteca-publica.md)
+## Layout de código preservando imports
+
+Desde a reorganização, os arquivos da biblioteca ficam em `/src`. As fachadas na raiz `api.go` e `legacy/api.go` mantêm os caminhos Go existentes. Isso **não muda** a dependência fixada no GitMaster: atualizar o commit de módulo é uma tarefa separada. Testes unitários ficam junto dos arquivos fonte e o teste de VM requer KVM autorizado. [GUIA-010](../guias/GUIA-010-build-testes.md).

@@ -2,7 +2,7 @@ name: Go 1.27 validation
 
 on:
   push:
-    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -26,13 +26,5 @@ jobs:
           go-version: '1.27.4'
           cache: true
           cache-dependency-path: go.sum
-      - name: Verify toolchain
-        run: go version
-      - name: Download module dependencies
-        run: go mod download
-      - name: Verify module files are tidy
-        run: go mod tidy -diff
-      - name: Run tests with race detector
-        run: go test -race -count=1 ./...
-      - name: Static analysis
-        run: go vet ./...
+      - name: Unit tests, race detector and static analysis
+        run: bash scripts/test-unit.sh

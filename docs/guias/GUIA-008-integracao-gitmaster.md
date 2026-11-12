@@ -35,3 +35,4 @@ A biblioteca não gerencia branches GitMaster, commits ou pushes. O InsulaVM `Ex
 ## Referências
 
 [API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Persistência](../persistencia/PERS-001-registro-execucoes.md) · [Separação arquitetural](../arquitetura/ARQ-002-separacao-gitmaster.md)
+Para compilar e testar a nova disposição do código sem alterar o import path, consulte [GUIA-010](GUIA-010-build-testes.md).

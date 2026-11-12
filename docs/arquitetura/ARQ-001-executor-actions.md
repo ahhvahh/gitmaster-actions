@@ -46,3 +46,6 @@ flowchart LR
 ## Referências
 
 [API](../interfaces/go/INTF-GO-001-biblioteca-publica.md) · [Fluxo](../fluxos/FLUX-001-execucao-action.md) · [Persistência](../persistencia/PERS-001-registro-execucoes.md) · [Separação de projetos](ARQ-002-separacao-gitmaster.md)
+## Organização do código
+
+A implementação continua em uma biblioteca Go modular, agora em [`/src`](../../src/). A raiz expõe a API pública de compatibilidade em [`api.go`](../../api.go); a fachada [`legacy/api.go`](../../legacy/api.go) mantém o caminho importado pelo GitMaster enquanto a implementação antiga reside em `src/legacy/`. Os contratos e fluxos permanecem em `/docs`. Os binários CLI são compilados a partir de `src/cmd/`, com destino informado a [`scripts/build.sh`](../../scripts/build.sh). Veja [GUIA-010](../guias/GUIA-010-build-testes.md).

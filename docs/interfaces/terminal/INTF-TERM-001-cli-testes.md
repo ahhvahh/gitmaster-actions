@@ -3,7 +3,7 @@
 
 # INTF-TERM-001 — CLI opcional de testes
 
-**Estado:** comandos listados abaixo implementados em `cmd/gitmaster-actions/main.go`; não há serviço/daemon nem execução Git.
+**Estado:** comandos listados abaixo implementados em `src/cmd/gitmaster-actions/main.go`; não há serviço/daemon nem execução Git.
 
 ## Sintaxe disponível
 
@@ -32,3 +32,4 @@ O manifesto usado por `run` é `action-v1`, descrito em [CONTR-001](../../contra
 ## Referências
 
 [Interface Go](../go/INTF-GO-001-biblioteca-publica.md) · [Fluxo](../../fluxos/FLUX-001-execucao-action.md) · [Profiles](../../contratos/CONTR-002-criacao-perfil.md)
+A compilação com destino configurável utiliza [`scripts/build.sh`](../../../scripts/build.sh). Veja [GUIA-010](../../guias/GUIA-010-build-testes.md).

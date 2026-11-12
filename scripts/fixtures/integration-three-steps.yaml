@@ -1,0 +1,11 @@
+schema_version: 1
+vm:
+  profile: __TEST_PROFILE__
+action:
+  name: teste-integral-tres-passos
+  jobs:
+    - name: verificar-vm
+      commands:
+        - "printf 'GM_STEP_1_OK\\n'"
+        - "test \"$(uname -s)\" = Linux && printf 'GM_STEP_2_OK\\n'"
+        - "test -d /tmp && printf 'GM_STEP_3_OK\\n'"
