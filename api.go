@@ -29,6 +29,8 @@ type (
 	VMImage        = core.VMImage
 	VMProfile      = core.VMProfile
 	ProfileRequest = core.ProfileRequest
+	ConfiguredVMProfile = core.ConfiguredVMProfile
+	VMProfilesConfig = core.VMProfilesConfig
 	LegacyRecord   = core.LegacyRecord
 )
 
@@ -40,6 +42,8 @@ const (
 var (
 	New                      = core.New
 	NewRuntime               = core.NewRuntime
+	NewRuntimeWithProfiles   = core.NewRuntimeWithProfiles
+	LoadVMProfilesConfig     = core.LoadVMProfilesConfig
 	NewOutputWriter          = core.NewOutputWriter
 	NewGuestCommand          = core.NewGuestCommand
 	ImageFormat              = core.ImageFormat

@@ -25,6 +25,7 @@ type VMProfile struct {
     MemoryMiB int `json:"memory_mib"`
     DiskGiB int `json:"disk_gib"`
     ManagedBy string `json:"managed_by"`
+    Workspace string `json:"workspace"`
 }
 type ProfileRequest struct {
     OS string `json:"os,omitempty"`
@@ -70,7 +71,7 @@ func ValidImageFile(dir,name string)(bool,error){
 }
 func profileInfo(p *insulavm.Profile) VMProfile {
     return VMProfile{Name:p.Name,OS:p.OS,Version:p.Version,Image:p.Image,
-        VCPUs:p.VCPUs,MemoryMiB:p.MemoryMiB,DiskGiB:p.DiskGB,ManagedBy:"InsulaVM"}
+        VCPUs:p.VCPUs,MemoryMiB:p.MemoryMiB,DiskGiB:p.DiskGB,ManagedBy:"InsulaVM",Workspace:p.GuestDestination("")}
 }
 func ListVMProfiles(configPath string)([]VMProfile,error){
     e,err:=insulavm.New(configPath)
