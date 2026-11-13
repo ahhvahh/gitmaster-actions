@@ -2,7 +2,7 @@
 
 Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands no **SQLite próprio**, executa os comandos dentro de uma VM descartável pelo [InsulaVM](https://github.com/ahhvahh/InsulaVM), armazena saídas e acompanha cleanup e estados. O **GitMaster** permanece responsável por GitHub, clones, commits, SHA, snapshots e pushes.
 
-**Toolchain:** Go 1.27 (`go.mod`), CI Go 1.27.4. **InsulaVM fixado:** `983c4a8b46c7ee1a2f7ebd3d45de41aa3589b397`. Testes de unidade/race/vet com mocks não substituem validação autorizada em KVM/Libvirt.
+**Toolchain:** Go 1.27 (`go.mod`), CI Go 1.27.4. **InsulaVM/main fixado:** `1ced9ce8b5b8cdd4b52c903e7949dfd8c1fb3abf`. Testes de unidade/race/vet com mocks não substituem validação autorizada em KVM/Libvirt.
 
 ## Componentes
 
@@ -10,7 +10,7 @@ Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands n
 - `action-v1` (arquivo local/CLI) e `gitmaster-workflow-v1` (GitMaster) são formatos distintos e selecionados explicitamente.
 - `SubmitYAML` cria Action, Jobs e Commands **antes** de iniciar worker e VM. Jobs executam por dependência topológica; commands são sequenciais na mesma VM.
 - `RunFile` e `RunYAML` são wrappers **síncronos** do mesmo executor. Logs, VM ID, erros e cleanup usam o mesmo esquema de persistência.
-- Reenvio da mesma origem/evento só é idempotente com hashes idênticos de YAML e TAR.GZ; conteúdo divergente retorna conflito.
+- Reenvio da mesma origem/evento só é idempotente com hashes idênticos de YAML e snapshot `.zip` ou `.tar.gz`; conteúdo divergente retorna conflito.
 - `ImportLegacyHistory` importa o SQLite anterior em modo leitura, preserva dados tipados em `legacy_archive` **e normaliza** o grafo e suas saídas no banco independente. `GetLegacyActionID` resolve IDs antigos para a nova API.
 - `legacy.NewStore` permanece apenas como adaptador de compatibilidade para consumidores ainda não migrados; não deve ser usado em novas integrações.
 
@@ -20,6 +20,7 @@ Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands n
 engine, err := gitmasteractions.New(gitmasteractions.Options{
     DatabasePath:     "/var/lib/gitmaster-actions/actions.db",
     InsulaConfigPath: "/etc/insulavm/config.yaml",
+    ProfilesConfigPath: "/etc/gitmaster-actions/profiles.yaml",
     Workers:          2,
 })
 if err != nil { return err }
@@ -33,7 +34,7 @@ action, err := engine.SubmitYAML(ctx, gitmasteractions.SubmitRequest{
         EventID: eventID, EventType: "commit",
         WorkflowName: "go-ci", WorkflowPath: ".gitmaster/workflow/go-ci.yaml",
     },
-    ArchivePath: "/srv/snapshots/commit.tar.gz",
+    ArchivePath: "/srv/snapshots/commit.zip",
 })
 if err != nil { return err }
 completed, err := engine.WaitAction(ctx, action.ID)
@@ -41,7 +42,24 @@ if err != nil { return err }
 if completed.Status != "succeeded" { return fmt.Errorf("action %s", completed.Status) }
 ```
 
-O consumidor deve ler o YAML da **árvore do SHA imutável** e fornecer TAR.GZ autorizado. A biblioteca valida o arquivo, cria cópia privada e registra seu SHA256; isso não substitui a política de exclusão de segredos do consumidor.
+O consumidor deve ler o YAML da **árvore do SHA imutável** e fornecer ZIP (ou TAR.GZ legado) autorizado. A biblioteca valida o arquivo, cria cópia privada e registra seu SHA256; isso não substitui a política de exclusão de segredos do consumidor.
+
+## Perfis QCOW2 e entrada por CLI
+
+O catálogo de perfis do **servidor** é `examples/insula/frozen-profiles.yaml` (um ou vários perfis). Cada entrada contém `name`, `image_path` absoluto para um QCOW2 congelado, `memory_mib`, `vcpus` e `workspace`, por exemplo `/tmp/workspace`. O workflow seleciona o perfil por `vm_profile`. O InsulaVM importa a imagem como perfil gerenciado na primeira utilização; cada Action inicia uma VM descartável. A imagem fonte permanece intacta. Perfis já registrados com configurações divergentes não são substituídos automaticamente.
+
+```bash
+gitmaster-actions run \
+  --db /var/lib/gitmaster-actions/actions.db \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml \
+  --format gitmaster-workflow-v1 \
+  --branch develop \
+  --file .gitmaster/workflow/go-ci.yaml \
+  --archive /srv/snapshots/repository.zip
+```
+
+O InsulaVM recebe o ZIP, o convidado executa `unzip` dentro do workspace configurado, e o executor persiste todos os Jobs, Commands, códigos de saída e logs no SQLite. **A imagem congelada precisa ter `unzip` instalado.** Veja [Contrato de perfis](docs/contratos/CONTR-004-perfis-congelados.md) e [Guia ZIP](docs/guias/GUIA-011-execucao-zip-vm.md).
 
 ## Testes
 

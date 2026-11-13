@@ -19,4 +19,4 @@ ssh:
   sudo_mode: disabled
 
 guest:
-  destination: /tmp/gmaster
+  destination: /tmp/workspace

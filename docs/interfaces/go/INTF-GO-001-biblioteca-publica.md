@@ -11,6 +11,7 @@
 engine, err := gitmasteractions.New(gitmasteractions.Options{
     DatabasePath:     "/var/lib/gitmaster-actions/actions.db",
     InsulaConfigPath: "/etc/insulavm/config.yaml",
+    ProfilesConfigPath: "/etc/gitmaster-actions/profiles.yaml",
     Workers:          2,
 })
 if err != nil { return err }
@@ -53,3 +54,8 @@ Use `SubmitRequest.Format=FormatGitMasterV1` para YAML `version: 1` de `.gitmast
 ## Referências
 
 [Contrato de workflow](../../contratos/CONTR-003-gitmaster-workflow.md) · [Manifesto local](../../contratos/CONTR-001-configuracao-action.md) · [SQLite](../../persistencia/PERS-001-registro-execucoes.md) · [Guia](../../guias/GUIA-008-integracao-gitmaster.md)
+## Perfis congelados e snapshots ZIP
+
+`Options.ProfilesConfigPath` aponta um YAML confiável no servidor que declara um ou vários perfis (`name`, `image_path`, `memory_mib`, `vcpus`, `workspace`). `LoadVMProfilesConfig(path)` valida esse catálogo. `NewRuntimeWithProfiles(insulaConfig, profilesConfig)` inicia o adaptador. Ao selecionar um perfil ainda não registrado, o InsulaVM copia o QCOW2 para seu armazenamento gerenciado; imagens já registradas não são substituídas automaticamente.
+
+`SubmitRequest.ArchivePath` recebe o caminho **absoluto** do ZIP do repositório ou TAR.GZ legado. `ActionOrigin.Branch` habilita os filtros de branch. Os Jobs/Commands são persistidos antes de executar a VM. O workspace por perfil é usado na extração e na execução de cada comando. `DeployToVM` da InsulaVM recebe apenas TAR.GZ; para ZIP o adaptador usa `ImportToVM` e `ExecVM` para executar `unzip` no convidado. `unzip` deve existir na imagem congelada.
