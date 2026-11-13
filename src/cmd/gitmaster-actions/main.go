@@ -10,6 +10,7 @@ import (
     "os"
     "os/signal"
     "syscall"
+    "time"
 
     actions "github.com/ahhvahh/gitmaster-actions"
 )
@@ -114,7 +115,14 @@ func run(args []string)error{
         })
         if err!=nil{return err}
         done,err:=engine.WaitAction(ctx,action.ID)
-        if err!=nil{return err}
+        if err!=nil {
+            // A cancelled CLI must synchronously stop its VM before exit.
+            _=engine.CancelAction(context.Background(),action.ID)
+            cleanupCtx,cancel:=context.WithTimeout(context.Background(),75*time.Second)
+            _,_=engine.WaitAction(cleanupCtx,action.ID)
+            cancel()
+            return err
+        }
         if err=output(done);err!=nil{return err}
         if done.Status!="succeeded"{return fmt.Errorf("action %s",done.Status)}
         return nil
