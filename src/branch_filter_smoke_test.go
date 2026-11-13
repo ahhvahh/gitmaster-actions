@@ -39,7 +39,7 @@ func TestBranchFilterSmokeExecutesOnlyMatchingJob(t *testing.T) {
             if done.Status!="succeeded"{t.Fatalf("action status=%s, expected succeeded",done.Status)}
             details,err:=engine.GetActionDetails(context.Background(),a.ID)
             if err!=nil{t.Fatal(err)}
-            jobs:=jobStates(t,*details)
+            jobs:=jobStates(t,details)
             if len(jobs)!=2{t.Fatalf("got %d jobs; want exactly 2",len(jobs))}
 
             for _,expect:=range []struct{

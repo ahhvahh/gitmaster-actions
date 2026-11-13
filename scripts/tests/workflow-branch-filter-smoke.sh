@@ -30,6 +30,6 @@ for BRANCH in develop main; do
   RC=$?
   set -e
   cat "$TMP/$BRANCH.json"
-  go run "$ROOT/scripts/tests/verify-branch-filter-json.go" "$BRANCH" "$TMP/$BRANCH.json" "$RC"
+  go run "$ROOT/scripts/tests/branch-filter/verify.go" "$BRANCH" "$TMP/$BRANCH.json" "$RC"
 done
 echo "OK: jobs filtrados por branch para develop e main"
