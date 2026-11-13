@@ -69,6 +69,11 @@ func (r *vmRuntime) Profile(name string) error {
         }
         registerConfiguredProfileMu.Unlock()
         if err!=nil{return fmt.Errorf("configured profile %s: %w",name,err)}
+        // InsulaVM's direct-boot profiles may only offer QGA, whereas
+        // ZIP import and command output here require managed SSH.
+        if existing.BootMode=="direct"{
+            return fmt.Errorf("profile %q uses direct boot; GitMaster Actions requires a Cloud-Init/SSH-enabled frozen image",name)
+        }
         if existing.MemoryMiB!=selected.MemoryMiB||existing.VCPUs!=selected.VCPUs||
            existing.GuestDestination("")!=selected.Workspace {
             return fmt.Errorf("registered profile %q differs from administrator YAML; create a new profile name or explicitly replace it in InsulaVM",name)

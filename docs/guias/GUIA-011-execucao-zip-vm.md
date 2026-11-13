@@ -6,7 +6,7 @@
 ## Pré-requisitos
 
 - Host Linux com InsulaVM, QEMU/Libvirt e configuração administrativa `/etc/insulavm/config.yaml`.
-- Uma ou várias imagens QCOW2 de VMs previamente preparadas e congeladas, com **`unzip` instalado**.
+- Uma ou várias imagens QCOW2 de VMs previamente preparadas e congeladas, com **`unzip` e Cloud-Init/SSH gerenciado instalados** (modo `direct`/QGA sem SSH não é suportado no executor atual).
 - Catálogo local `/etc/gitmaster-actions/profiles.yaml` conforme [CONTR-004](../contratos/CONTR-004-perfis-congelados.md).
 - Workflow que seleciona um dos perfis por `vm_profile`; ZIP do repositório correspondente à branch recebida.
 

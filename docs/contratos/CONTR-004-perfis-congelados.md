@@ -49,3 +49,5 @@ O parser é estrito: não admite chaves desconhecidas, múltiplos documentos ou 
 ## Dependência
 
 Contratos verificados contra `InsulaVM/main` no commit `1ced9ce8b5b8cdd4b52c903e7949dfd8c1fb3abf`: `RegisterProfile`, `GetProfile`, `ResolveVMWorkspace`, `StartVMWithOptions`, `ImportToVM`, `ExecVM`, `StopVM`.
+
+**Compatibilidade de boot:** o executor atual importa arquivos e executa comandos por SSH gerenciado. Perfis `boot_mode: direct` provenientes de instalações ISO que só possuem QGA não são compatíveis com esse fluxo e são rejeitados na seleção. Para utilizá-los, é preciso implementar transporte e execução por QGA em outra evolução ou preparar uma imagem com Cloud-Init/SSH.

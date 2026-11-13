@@ -47,6 +47,16 @@ func TestFrozenProfilesRegisteredAndWorkspaceResolved(t *testing.T) {
     mismatch,err:=NewRuntimeWithProfiles(host,yaml)
     if err!=nil{t.Fatal(err)}
     if err:=mismatch.Profile("ci-small");err==nil{t.Fatal("changed profile settings silently reused frozen image")}
+    if err:=os.WriteFile(yaml,content,0600);err!=nil{t.Fatal(err)}
+    // Direct-boot installer profiles cannot use SSH ImportToVM/ExecVM.
+    profileFile:=filepath.Join(filepath.Dir(host),"storage","profiles","ci-small","profile.yaml")
+    profileYAML,err:=os.ReadFile(profileFile)
+    if err!=nil{t.Fatal(err)}
+    profileYAML=bytes.Replace(profileYAML,[]byte("name: ci-small"),[]byte("name: ci-small\nboot_mode: direct"),1)
+    if err:=os.WriteFile(profileFile,profileYAML,0600);err!=nil{t.Fatal(err)}
+    direct,err:=NewRuntimeWithProfiles(host,yaml)
+    if err!=nil{t.Fatal(err)}
+    if err:=direct.Profile("ci-small");err==nil{t.Fatal("direct-boot profile accepted for SSH ZIP execution")}
 }
 func TestFrozenProfilesStrictValidation(t *testing.T) {
     _,catalogPath:=testProfileCatalog(t)
