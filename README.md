@@ -90,3 +90,7 @@ O CI executa os testes unitários em cada **push/PR**; o teste integral (ISO Deb
 ## Smoke test de dependências, skip e concorrência
 
 Use o [YAML com 10 Jobs](examples/workflow/dependency-parallel-smoke.yaml), o [catálogo com perfil ci-smoke](examples/insula/frozen-profiles.yaml) e o [script CLI com verificação de resultados](scripts/tests/workflow-parallel-smoke.sh). Com `--branch develop`, valida Jobs executados e omitidos; com `--branch teste-falha`, produz erro intencional exit 17 e deve pular o Job dependente. Instruções e saída esperada: [GUIA-011](docs/guias/GUIA-011-execucao-zip-vm.md). Não é necessário integrar GitMaster para executar esse ensaio de CLI.
+
+### Teste isolado: um Job executa e outro não, conforme a branch
+
+Use o [workflow mínimo com dois Jobs](examples/workflow/branch-filter-smoke.yaml): em `develop`, somente `job_develop` executa, e `job_main` é persistido como `skipped` (`branch_filter`); em `main`, ocorre o inverso. Os testes Go ([`TestBranchFilterSmokeExecutesOnlyMatchingJob`](src/branch_filter_smoke_test.go)) verificam os dois cenários com runtime simulado, incluindo comandos, código de saída, logs e ausência de chamadas para o Job filtrado. Para ensaio com VM real, rode `bash scripts/tests/workflow-branch-filter-smoke.sh /etc/insulavm/config.yaml /etc/gitmaster-actions/profiles.yaml`: o script prepara um ZIP mínimo, testa as duas branches pela CLI e verifica o JSON persistido.
