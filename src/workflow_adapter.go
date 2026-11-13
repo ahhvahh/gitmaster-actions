@@ -51,6 +51,7 @@ type plannedJob struct {
 type executionPlan struct {
 	Name, Profile string
 	Jobs          []plannedJob
+	MaxParallelJobs int
 	ArchivePath   string
 }
 
@@ -116,6 +117,7 @@ type workflowV1 struct {
 	Version   int    `yaml:"version"`
 	Name      string `yaml:"name"`
 	VMProfile string `yaml:"vm_profile"`
+	MaxParallelJobs int `yaml:"max_parallel_jobs"`
 	Triggers  []struct {
 		Event    string   `yaml:"event"`
 		Branches []string `yaml:"branches"`
@@ -169,7 +171,7 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 	if err := parseStrictYAML(data, &w); err != nil {
 		return executionPlan{}, err
 	}
-	if w.Version != 1 || strings.TrimSpace(w.Name) == "" || !safeWorkflowName.MatchString(w.VMProfile) || len(w.Jobs) == 0 || len(w.Jobs) > 100 {
+	if w.Version != 1 || strings.TrimSpace(w.Name) == "" || !safeWorkflowName.MatchString(w.VMProfile) || len(w.Jobs) == 0 || len(w.Jobs) > 100 || w.MaxParallelJobs < 0 || w.MaxParallelJobs > 16 {
 		return executionPlan{}, errors.New("workflow requires version: 1, name, vm_profile and 1..100 jobs")
 	}
 	if o.WorkflowName != "" && o.WorkflowName != w.Name {
@@ -245,7 +247,8 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 			return executionPlan{}, err
 		}
 	}
-	p := executionPlan{Name: w.Name, Profile: w.VMProfile}
+	p := executionPlan{Name: w.Name, Profile: w.VMProfile, MaxParallelJobs: w.MaxParallelJobs}
+	if p.MaxParallelJobs == 0 { p.MaxParallelJobs = 1 } // Sequential default preserves prior behavior.
 	skipped := map[string]bool{}
 	for _, name := range order {
 		j := w.Jobs[name]
@@ -277,7 +280,7 @@ func parseActionV1(data []byte) (executionPlan, error) {
 	if err != nil {
 		return executionPlan{}, err
 	}
-	p := executionPlan{Name: m.Action.Name, Profile: m.VM.Profile}
+	p := executionPlan{Name: m.Action.Name, Profile: m.VM.Profile, MaxParallelJobs: 1}
 	if len(m.Action.Imports) > 1 {
 		return executionPlan{}, errors.New("action-v1 supports only one authorized archive per run")
 	}
