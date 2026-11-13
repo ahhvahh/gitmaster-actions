@@ -172,6 +172,9 @@ func TestSmokeWorkflowBranchesAndDependencyBarriers(t *testing.T){
 
 func TestIndependentJobsRunningWhileVMCommandsAreSerialized(t *testing.T){
     hold:=make(chan struct{})
+    var releaseOnce sync.Once
+    release:=func(){releaseOnce.Do(func(){close(hold)})}
+    defer release()
     first:=make(chan struct{})
     runtime:=&smokeRuntime{testRuntime:&testRuntime{},holdA:hold,firstA:first}
     e:=smokeEngine(t,runtime)
@@ -197,7 +200,7 @@ func TestIndependentJobsRunningWhileVMCommandsAreSerialized(t *testing.T){
         time.Sleep(10*time.Millisecond)
     }
     if !simultaneous{t.Fatal("independent jobs did not both reach running")}
-    close(hold)
+    release()
     // WaitAction returns only after all workers, command logs and cleanup.
     done,err:=e.WaitAction(context.Background(),a.ID)
     if err!=nil||done.Status!="succeeded"{t.Fatalf("state=%v err=%v",done,err)}

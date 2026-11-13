@@ -19,6 +19,8 @@ BIN="${GITMASTER_ACTIONS_BIN:-$ROOT/.smoke-gitmaster-actions}"
 if [[ ! -x "$BIN" ]]; then
   (cd "$ROOT" && go build -o "$BIN" ./src/cmd/gitmaster-actions)
 fi
+TMP_JSON="$(mktemp)"
+trap 'rm -f "$TMP_JSON"' EXIT
 set +e
 "$BIN" run \
   --db "$DB" \
@@ -28,19 +30,9 @@ set +e
   --branch "$BRANCH" \
   --file "$ROOT/examples/workflow/dependency-parallel-smoke.yaml" \
   --archive "$ZIP" \
-  --details
+  --details > "$TMP_JSON"
 RC=$?
 set -e
-if [[ "$BRANCH" == "teste-falha" ]]; then
-  if ((RC == 0)); then
-    echo "ERRO: teste-falha deveria retornar status diferente de zero" >&2
-    exit 1
-  fi
-  echo "OK: fluxo com falha intencional produziu erro, veja os Jobs acima."
-else
-  if ((RC != 0)); then
-    echo "ERRO: branch $BRANCH deveria concluir com sucesso" >&2
-    exit "$RC"
-  fi
-  echo "OK: fluxo de execução e skips concluído, veja os Jobs acima."
-fi
+cat "$TMP_JSON"
+go run "$ROOT/scripts/tests/verify-workflow-json.go" "$BRANCH" "$TMP_JSON" "$RC"
+echo "Validação concluída para a branch $BRANCH."

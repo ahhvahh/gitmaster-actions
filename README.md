@@ -87,3 +87,6 @@ bash scripts/test-integration.sh --insula-config /etc/insulavm/config.yaml
 ```
 
 O CI executa os testes unitários em cada **push/PR**; o teste integral (ISO Debian 13, perfil 500 MiB/1 vCPU, três comandos, validação de logs e cleanup) requer host KVM autorizado e é explicitamente manual. Veja [GUIA-010](docs/guias/GUIA-010-build-testes.md).
+## Smoke test de dependências, skip e concorrência
+
+Use o [YAML com 10 Jobs](examples/workflow/dependency-parallel-smoke.yaml), o [catálogo com perfil ci-smoke](examples/insula/frozen-profiles.yaml) e o [script CLI com verificação de resultados](scripts/tests/workflow-parallel-smoke.sh). Com `--branch develop`, valida Jobs executados e omitidos; com `--branch teste-falha`, produz erro intencional exit 17 e deve pular o Job dependente. Instruções e saída esperada: [GUIA-011](docs/guias/GUIA-011-execucao-zip-vm.md). Não é necessário integrar GitMaster para executar esse ensaio de CLI.

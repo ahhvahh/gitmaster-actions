@@ -54,3 +54,31 @@ Para consultar, utilize `actions list|get`, `jobs list|get`, `commands list|get`
 ## Testes de dependências e paralelismo
 
 Use [dependency-parallel-smoke.yaml](../../examples/workflow/dependency-parallel-smoke.yaml) com `--format gitmaster-workflow-v1 --branch develop --details` para observar Jobs executados e pulados. Use `--branch teste-falha` para verificar uma falha intencional (exit 17) e o bloqueio de dependentes. O `max_parallel_jobs: 4` permite vários Jobs ativos; o InsulaVM serializa seus comandos no mesmo convidado. Em caso de `ErrVMExecBusy` externo, o executor tenta novamente até cinco vezes com jitter de 10 a 1.000 ms.
+
+### Preparar ZIP mínimo e executar na CLI
+
+O ZIP deve conter arquivos na raiz, não uma pasta adicional do repositório. O workflow de teste não precisa compilar um projeto: executa comandos POSIX básicos no convidado e cria seus próprios resultados no `workspace`.
+
+```bash
+mkdir -p /tmp/gitmaster-smoke/repo
+printf 'gitmaster-actions smoke test\n' > /tmp/gitmaster-smoke/repo/README.md
+(cd /tmp/gitmaster-smoke/repo && zip -q ../repo.zip README.md)
+
+# Executar um fluxo que deve terminar succeeded com alguns Jobs skipped
+bash scripts/tests/workflow-parallel-smoke.sh \
+  /etc/insulavm/config.yaml \
+  /etc/gitmaster-actions/profiles.yaml \
+  /tmp/gitmaster-smoke/repo.zip develop
+
+# Executar falha intencional (exit 17) e validar o skip do dependente
+bash scripts/tests/workflow-parallel-smoke.sh \
+  /etc/insulavm/config.yaml \
+  /etc/gitmaster-actions/profiles.yaml \
+  /tmp/gitmaster-smoke/repo.zip teste-falha
+```
+
+**Resultado esperado (branch `develop`):** `preparar`, `paralelo_a`, `paralelo_b`, `unir_paralelos`, `somente_develop` e `finalizar` como `succeeded`; `somente_main`, `bloqueado_por_filtro`, `falha_intencional`, `bloqueado_por_falha` como `skipped`.
+
+**Resultado esperado (branch `teste-falha`):** `falha_intencional` como `failed` com exit code 17; `bloqueado_por_falha` como `skipped` com motivo `dependency_not_succeeded:falha_intencional`; os dois caminhos paralelos e o Job final devem concluir normalmente; a Action inteira termina `failed` como previsto.
+
+O script executa a CLI com `--details`, confere os estados persistidos e trata a falha planejada como sucesso do **teste** (a Action de falha, porém, permanece `failed`). Requer `go`, `zip`, um host KVM/Libvirt funcional e um perfil `ci-smoke` apto a SSH/Cloud-Init.
