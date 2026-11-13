@@ -10,3 +10,8 @@ profiles:
     memory_mib: 1024
     vcpus: 1
     workspace: /tmp/workspace
+  - name: ci-smoke
+    image_path: /var/lib/insulavm/frozen/debian13-smoke.qcow2
+    memory_mib: 1024
+    vcpus: 2
+    workspace: /tmp/workspace

@@ -41,6 +41,7 @@ func run(args []string)error{
     branch:=f.String("branch","","working branch for workflow filters")
     archive:=f.String("archive","","absolute repository .zip or .tar.gz snapshot")
     profilesConfig:=f.String("profiles-config","","administrator YAML catalog of frozen QCOW2 profiles")
+    details:=f.Bool("details",false,"print Action with Jobs, Commands, statuses and runtime events")
     stdin:=f.Bool("stdin",false,"read YAML from standard input")
     id:=f.String("id","","Action, Job or Command UUID")
     actionID:=f.String("action-id","","Action UUID")
@@ -85,6 +86,15 @@ func run(args []string)error{
     engine,err:=actions.New(actions.Options{DatabasePath:*db,InsulaConfigPath:*config,ProfilesConfigPath:*profilesConfig})
     if err!=nil{return err}
     defer engine.Close()
+    emitRun:=func(a *actions.Action)error{
+        if a==nil{return nil}
+        if *details {
+            full,err:=engine.GetActionDetails(context.Background(),a.ID)
+            if err!=nil{return err}
+            return output(full)
+        }
+        return output(a)
+    }
     switch cmd{
     case "run":
         if (*file=="")==!*stdin{return errors.New("run requires exactly one --file or --stdin")}
@@ -95,11 +105,11 @@ func run(args []string)error{
                 data,err:=io.ReadAll(io.LimitReader(os.Stdin,2<<20))
                 if err!=nil{return err}
                 a,err=engine.RunYAML(ctx,data)
-                if a!=nil{_ = output(a)}
+                if a!=nil{_ = emitRun(a)}
                 return err
             }
             a,err=engine.RunFile(ctx,*file)
-            if a!=nil{_ = output(a)}
+            if a!=nil{_ = emitRun(a)}
             return err
         }
         if *format!="gitmaster-workflow-v1" {return errors.New("unsupported YAML format")}
@@ -123,7 +133,7 @@ func run(args []string)error{
             cancel()
             return err
         }
-        if err=output(done);err!=nil{return err}
+        if err=emitRun(done);err!=nil{return err}
         if done.Status!="succeeded"{return fmt.Errorf("action %s",done.Status)}
         return nil
     case "actions":

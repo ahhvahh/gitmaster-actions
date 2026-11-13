@@ -50,3 +50,7 @@ O processamento segue: validar YAML e perfil → validar e copiar ZIP para área
 O validador ZIP recusa travessia de diretório, caminhos duplicados, symlinks, entradas especiais, entradas criptografadas, nomes reservados para credenciais e arquivos demasiadamente grandes. O ZIP comprimido é limitado a 100 MiB, o conteúdo descomprimido a 256 MiB, até 15.000 arquivos e 20.000 entradas. O chamador deve filtrar quaisquer outros segredos e autorizar os comandos. Os comandos do YAML executam **dentro da VM**, nunca no host.
 
 Para consultar, utilize `actions list|get`, `jobs list|get`, `commands list|get`, `logs list` e `outputs list`; os métodos equivalentes da biblioteca são `GetActionDetails`, `ListJobs`, `ListCommands` e `ListCommandLogs`. O estado terminal pode ser `succeeded`, `failed` ou `cancelled`; uma ação interrompida não é retomada automaticamente.
+
+## Testes de dependências e paralelismo
+
+Use [dependency-parallel-smoke.yaml](../../examples/workflow/dependency-parallel-smoke.yaml) com `--format gitmaster-workflow-v1 --branch develop --details` para observar Jobs executados e pulados. Use `--branch teste-falha` para verificar uma falha intencional (exit 17) e o bloqueio de dependentes. O `max_parallel_jobs: 4` permite vários Jobs ativos; o InsulaVM serializa seus comandos no mesmo convidado. Em caso de `ErrVMExecBusy` externo, o executor tenta novamente até cinco vezes com jitter de 10 a 1.000 ms.

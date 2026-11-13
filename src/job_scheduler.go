@@ -4,7 +4,6 @@ import (
     "context"
     "errors"
     "fmt"
-    "io"
     "strings"
     "time"
 )
@@ -208,12 +207,9 @@ func (e *Engine) runPlannedJob(ctx context.Context, actionID, jobID string, j pl
     if err!=nil{return "failed",err}
     if infrastructure{
         if ctx.Err()!=nil{return state,ctx.Err()}
-        if jobCtx.Err()!=nil{return state,fmt.Errorf("job timeout: %w",jobCtx.Err())}
+        if jobCtx.Err()!=nil{return state,fmt.Errorf("job timeout: %v",jobCtx.Err())}
         return state,errors.New("VM command infrastructure failure")
     }
     return state,nil
 }
 
-// A compile-time reference reminds maintainers that command output remains
-// stream-oriented; the Runtime boundary is used identically by CLI and API.
-var _ io.Writer

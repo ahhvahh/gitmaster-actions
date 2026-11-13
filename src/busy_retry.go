@@ -38,7 +38,7 @@ func runWithBusyRetry(ctx context.Context, call func()(int,error),
         ticker:=time.NewTimer(pause)
         select{
         case <-ctx.Done():
-            if !ticker.Stop(){<-ticker.C}
+            ticker.Stop()
             return -1,ctx.Err()
         case <-ticker.C:
         }
