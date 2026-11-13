@@ -36,6 +36,10 @@ func run(args []string)error{
     db:=f.String("db","actions.db","GitMaster Actions private SQLite")
     config:=f.String("insula-config","","InsulaVM administrator config")
     file:=f.String("file","","YAML manifest path")
+    format:=f.String("format","action-v1","action-v1 or gitmaster-workflow-v1")
+    branch:=f.String("branch","","working branch for workflow filters")
+    archive:=f.String("archive","","absolute repository .zip or .tar.gz snapshot")
+    profilesConfig:=f.String("profiles-config","","administrator YAML catalog of frozen QCOW2 profiles")
     stdin:=f.Bool("stdin",false,"read YAML from standard input")
     id:=f.String("id","","Action, Job or Command UUID")
     actionID:=f.String("action-id","","Action UUID")
@@ -77,23 +81,43 @@ func run(args []string)error{
         default:return errors.New("profiles: expected list, images or register")
         }
     }
-    engine,err:=actions.New(actions.Options{DatabasePath:*db,InsulaConfigPath:*config})
+    engine,err:=actions.New(actions.Options{DatabasePath:*db,InsulaConfigPath:*config,ProfilesConfigPath:*profilesConfig})
     if err!=nil{return err}
     defer engine.Close()
     switch cmd{
     case "run":
         if (*file=="")==!*stdin{return errors.New("run requires exactly one --file or --stdin")}
-        var a *actions.Action
-        if *stdin{
-            data,err:=io.ReadAll(io.LimitReader(os.Stdin,2<<20))
-            if err!=nil{return err}
-            a,err=engine.RunYAML(ctx,data)
+        if *format=="action-v1" {
+            if *archive!=""||*branch!=""{return errors.New("--archive and --branch require --format gitmaster-workflow-v1")}
+            var a *actions.Action
+            if *stdin{
+                data,err:=io.ReadAll(io.LimitReader(os.Stdin,2<<20))
+                if err!=nil{return err}
+                a,err=engine.RunYAML(ctx,data)
+                if a!=nil{_ = output(a)}
+                return err
+            }
+            a,err=engine.RunFile(ctx,*file)
             if a!=nil{_ = output(a)}
             return err
         }
-        a,err=engine.RunFile(ctx,*file)
-        if a!=nil{_ = output(a)}
-        return err
+        if *format!="gitmaster-workflow-v1" {return errors.New("unsupported YAML format")}
+        if *branch==""||*archive==""{return errors.New("workflow execution requires --branch and --archive")}
+        var data []byte
+        var err error
+        if *stdin {data,err=io.ReadAll(io.LimitReader(os.Stdin,2<<20))} else {data,err=os.ReadFile(*file)}
+        if err!=nil{return err}
+        action,err:=engine.SubmitYAML(ctx,actions.SubmitRequest{
+            YAML:data,Format:actions.FormatGitMasterV1,
+            Origin:actions.ActionOrigin{Branch:*branch,EventType:"manual"},
+            ArchivePath:*archive,
+        })
+        if err!=nil{return err}
+        done,err:=engine.WaitAction(ctx,action.ID)
+        if err!=nil{return err}
+        if err=output(done);err!=nil{return err}
+        if done.Status!="succeeded"{return fmt.Errorf("action %s",done.Status)}
+        return nil
     case "actions":
         if sub=="list"{
             a,err:=engine.ListActions(ctx,actions.ActionFilter{},actions.Page{Limit:*limit})

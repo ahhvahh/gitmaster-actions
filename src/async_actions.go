@@ -2,6 +2,7 @@ package gitmasteractions
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -44,6 +45,7 @@ func forbiddenSnapshotPath(name string) bool {
 }
 
 func safeSnapshotArchive(file string) error {
+	if strings.HasSuffix(strings.ToLower(file), ".zip") { return safeZipSnapshot(file) }
 	fi, err := os.Lstat(file)
 	if err != nil {
 		return err
@@ -116,8 +118,8 @@ func (e *Engine) stageSnapshot(ctx context.Context, origin string) (string, stri
 	if origin == "" {
 		return "", "", nil
 	}
-	if !filepath.IsAbs(origin) || !strings.HasSuffix(strings.ToLower(origin), ".tar.gz") {
-		return "", "", errors.New("ArchivePath must be absolute .tar.gz")
+	if !filepath.IsAbs(origin) || !(strings.HasSuffix(strings.ToLower(origin), ".tar.gz") || strings.HasSuffix(strings.ToLower(origin), ".zip")) {
+		return "", "", errors.New("ArchivePath must be absolute .zip or .tar.gz")
 	}
 	fi, err := os.Lstat(origin)
 	if err != nil {
@@ -130,7 +132,9 @@ func (e *Engine) stageSnapshot(ctx context.Context, origin string) (string, stri
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", "", err
 	}
-	dest, err := os.CreateTemp(dir, "snapshot-*.tar.gz")
+	suffix := ".tar.gz"
+	if strings.HasSuffix(strings.ToLower(origin), ".zip") { suffix = ".zip" }
+	dest, err := os.CreateTemp(dir, "snapshot-*" + suffix)
 	if err != nil {
 		return "", "", err
 	}
@@ -580,4 +584,45 @@ func nullableString(v string) any {
 		return nil
 	}
 	return v
+}
+
+// safeZipSnapshot rejects zip-slip, symlinks, duplicate paths, credentials,
+// encrypted entries and excessive decompression before the file reaches a VM.
+func safeZipSnapshot(filename string) error {
+    info,err:=os.Lstat(filename)
+    if err!=nil{return err}
+    if !info.Mode().IsRegular()||info.Size()==0||info.Size()>100<<20 {
+        return errors.New("ZIP must be a regular archive <=100 MiB")
+    }
+    zr,err:=zip.OpenReader(filename)
+    if err!=nil{return fmt.Errorf("invalid ZIP: %w",err)}
+    defer zr.Close()
+    if len(zr.File)==0||len(zr.File)>20000{return errors.New("ZIP entry count must be 1..20000")}
+    seen:=make(map[string]bool,len(zr.File))
+    count:=0
+    var total uint64
+    for _,file:=range zr.File {
+        name:=strings.TrimSuffix(file.Name,"/")
+        if name==""||path.IsAbs(name)||strings.Contains(name,"\\")||
+           strings.ContainsRune(name,0)||path.Clean(name)!=name||
+           strings.HasPrefix(name,"../")||name==".."||seen[name] {
+            return fmt.Errorf("unsafe or duplicate ZIP path %q",name)
+        }
+        if forbiddenSnapshotPath(name){return fmt.Errorf("ZIP contains sensitive path %q",name)}
+        seen[name]=true
+        if file.Flags&0x1!=0{return fmt.Errorf("encrypted ZIP entry %q",name)}
+        if file.FileInfo().IsDir(){continue}
+        if !file.Mode().IsRegular(){return fmt.Errorf("ZIP entry is not a regular file %q",name)}
+        count++
+        total+=file.UncompressedSize64
+        if count>15000||total>256<<20{return errors.New("ZIP exceeds file/count limits")}
+        reader,err:=file.Open()
+        if err!=nil{return err}
+        n,copyErr:=io.Copy(io.Discard,io.LimitReader(reader,int64(file.UncompressedSize64)+1))
+        closeErr:=reader.Close()
+        if err:=errors.Join(copyErr,closeErr);err!=nil{return err}
+        if uint64(n)!=file.UncompressedSize64{return fmt.Errorf("ZIP size mismatch for %q",name)}
+    }
+    if count==0{return errors.New("ZIP has no regular files")}
+    return nil
 }

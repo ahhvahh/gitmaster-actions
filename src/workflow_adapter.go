@@ -62,9 +62,13 @@ func validateOrigin(o ActionOrigin) error {
 	if o.EventType != "" && o.EventType != "commit" && o.EventType != "push" && o.EventType != "manual" {
 		return errors.New("event_type must be commit, push or manual")
 	}
-	if o.CloneID == "" && o.CommitSHA == "" && o.WorkflowPath == "" && o.EventID == "" && o.Branch == "" {
-		return nil
-	}
+	if o.CloneID == "" && o.CommitSHA == "" && o.WorkflowPath == "" && o.EventID == "" {
+        // Manual CLI executions may identify only the branch, so job filters
+        // work without inventing a clone ID or a commit SHA.
+        if o.EventType!="" && o.EventType!="manual" {return errors.New("partial origin may only be manual")}
+        if o.Branch!="" && !validBranch(o.Branch) {return errors.New("invalid branch")}
+        return nil
+    }
 	if o.CloneID == "" || !safeSHA.MatchString(o.CommitSHA) || !validBranch(o.Branch) || o.WorkflowPath == "" || o.EventType == "" {
 		return errors.New("complete clone_id, 40-character commit_sha, branch, workflow_path and event_type are required")
 	}
