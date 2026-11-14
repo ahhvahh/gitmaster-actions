@@ -21,6 +21,9 @@ type (
 	GuestCommand   = core.GuestCommand
 	YAMLFormat     = core.YAMLFormat
 	CommandPair    = core.CommandPair
+	JobGraph       = core.JobGraph
+	GraphJob       = core.GraphJob
+	JobDecision    = core.JobDecision
 	ConvertOptions = core.ConvertOptions
 	ActionOrigin   = core.ActionOrigin
 	SubmitRequest  = core.SubmitRequest
@@ -43,6 +46,7 @@ const (
 
 var (
 	ConvertYAML              = core.ConvertYAML
+	NewJobGraph              = core.NewJobGraph
 	New                      = core.New
 	NewRuntime               = core.NewRuntime
 	NewRuntimeWithProfiles   = core.NewRuntimeWithProfiles

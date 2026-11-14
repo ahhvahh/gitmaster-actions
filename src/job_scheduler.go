@@ -23,6 +23,8 @@ func (e *Engine) executePlannedJobs(ctx context.Context, actionID string, plan e
     persisted,err:=e.ListJobs(ctx,actionID)
     if err!=nil{return err}
     if len(persisted)!=len(plan.Jobs){return errors.New("persisted jobs differ from execution plan")}
+    graph,err:=newJobGraphFromPlan(plan)
+    if err!=nil{return fmt.Errorf("invalid JobGraph: %w",err)}
     parallel:=plan.MaxParallelJobs
     if parallel<1{parallel=1}
     if parallel>16{return errors.New("max_parallel_jobs exceeds 16")}
@@ -48,17 +50,10 @@ func (e *Engine) executePlannedJobs(ctx context.Context, actionID string, plan e
         if fatal==nil && runCtx.Err()==nil {
             for i,j:=range plan.Jobs {
                 if states[j.Name]!=""{continue}
-                blocked:=""
-                ready:=true
-                for _,need:=range j.Needs {
-                    state:=states[need]
-                    if state==""||state=="running"{ready=false;break}
-                    if state!="succeeded"&&blocked==""{blocked=need}
-                }
-                if !ready{continue}
-                if blocked!=""{
-                    reason:="dependency_not_succeeded:"+blocked
-                    if err:=e.skipDependentJob(runCtx,jobByName[j.Name],reason);err!=nil{
+                decision:=graph.decide(j.Name,states)
+                if decision.State=="waiting"{continue}
+                if decision.State=="blocked"{
+                    if err:=e.skipDependentJob(runCtx,jobByName[j.Name],decision.Reason);err!=nil{
                         fatal=fmt.Errorf("skip job %s: %w",j.Name,err)
                         cancel()
                         break
@@ -66,6 +61,11 @@ func (e *Engine) executePlannedJobs(ctx context.Context, actionID string, plan e
                     states[j.Name]="skipped"
                     remaining--
                     continue
+                }
+                if decision.State!="ready"{
+                    fatal=fmt.Errorf("unexpected decision %s for job %s",decision.State,j.Name)
+                    cancel()
+                    break
                 }
                 if running>=parallel{continue}
                 states[j.Name]="running"

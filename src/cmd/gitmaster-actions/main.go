@@ -22,13 +22,13 @@ func output(v any)error {
 }
 func run(args []string)error{
     if len(args)==0||args[0]=="--help"||args[0]=="help"{
-        fmt.Println("usage: gitmaster-actions plan|run|actions|jobs|commands|logs|outputs|profiles [options]")
+        fmt.Println("usage: gitmaster-actions plan|graph|run|actions|jobs|commands|logs|outputs|profiles [options]")
         return nil
     }
     cmd:=args[0]
     sub:=""
     rest:=args[1:]
-    if cmd!="run" && cmd!="plan" {
+    if cmd!="run" && cmd!="plan" && cmd!="graph" {
         if len(rest)==0{return errors.New("subcommand required")}
         sub=rest[0]
         rest=rest[1:]
@@ -38,9 +38,10 @@ func run(args []string)error{
     config:=f.String("insula-config","","InsulaVM administrator config")
     file:=f.String("file","","YAML manifest path")
     defaultFormat:="action-v1"
-    if cmd=="plan"{ defaultFormat="gitmaster-workflow-v1" }
+    if cmd=="plan" || cmd=="graph"{ defaultFormat="gitmaster-workflow-v1" }
     format:=f.String("format",defaultFormat,"action-v1 or gitmaster-workflow-v1")
-    event:=f.String("event","manual","plan only: manual, commit or push for trigger checks")
+    event:=f.String("event","manual","plan/graph: manual, commit or push for trigger checks")
+    statusesFile:=f.String("statuses","", "graph only: JSON map of job names to runtime statuses")
     branch:=f.String("branch","","working branch for workflow filters")
     archive:=f.String("archive","","absolute repository .zip or .tar.gz snapshot")
     profilesConfig:=f.String("profiles-config","","administrator YAML catalog of frozen QCOW2 profiles")
@@ -64,10 +65,10 @@ func run(args []string)error{
     if len(f.Args())!=0{return errors.New("unexpected positional arguments")}
     ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM)
     defer stop()
-    if cmd=="plan"{
-        // Planner is pure: do not create an Engine, SQLite DB, or VM here.
-        if (*file=="")==!*stdin{return errors.New("plan requires exactly one --file or --stdin")}
-        if *archive!=""{return errors.New("plan does not need --archive")}
+    if cmd=="plan" || cmd=="graph"{
+        // Planning and dependency inspection are pure: no Engine/SQLite/VM.
+        if (*file=="")==!*stdin{return errors.New("plan/graph requires exactly one --file or --stdin")}
+        if *archive!=""{return errors.New("plan/graph does not need --archive")}
         var data []byte
         var err error
         if *stdin {
@@ -76,11 +77,27 @@ func run(args []string)error{
             data,err=os.ReadFile(*file)
         }
         if err!=nil{return err}
-        rows,err:=actions.ConvertYAML(data,actions.ConvertOptions{
+        opts:=actions.ConvertOptions{
             Format:actions.YAMLFormat(*format),Branch:*branch,EventType:*event,
-        })
+        }
+        if cmd=="plan"{
+            if *statusesFile!=""{return errors.New("--statuses is only valid for graph")}
+            rows,err:=actions.ConvertYAML(data,opts)
+            if err!=nil{return err}
+            return output(rows)
+        }
+        graph,err:=actions.NewJobGraph(data,opts)
         if err!=nil{return err}
-        return output(rows)
+        statuses:=map[string]string{}
+        if *statusesFile!=""{
+            data,err:=os.ReadFile(*statusesFile)
+            if err!=nil{return err}
+            if len(data)>1<<20{return errors.New("status JSON exceeds 1 MiB")}
+            if err=json.Unmarshal(data,&statuses);err!=nil{return fmt.Errorf("invalid --statuses JSON: %w",err)}
+        }
+        decisions,err:=graph.Evaluate(statuses)
+        if err!=nil{return err}
+        return output(decisions)
     }
     if cmd=="profiles"{
         if *config==""{return errors.New("--insula-config is required")}
