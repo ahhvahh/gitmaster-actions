@@ -30,3 +30,9 @@ jobs:
         run: bash tests/run.sh --mode unit
       - name: Confirm project-named binary
         run: test -x tests/bin/gitmaster-actions
+      - name: Validate real-VM example suite without KVM
+        run: |
+          bash -n tests/run-vm-examples.sh
+          bash -n tests/run.sh
+          bash tests/run-vm-examples.sh --list
+          bash tests/run-vm-examples.sh --dry-run
