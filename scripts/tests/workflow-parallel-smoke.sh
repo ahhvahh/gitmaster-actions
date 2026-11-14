@@ -34,5 +34,5 @@ set +e
 RC=$?
 set -e
 cat "$TMP_JSON"
-go run "$ROOT/scripts/tests/verify-workflow-json.go" "$BRANCH" "$TMP_JSON" "$RC"
+go run "$ROOT/tests/verifiers/parallel/verify.go" "$BRANCH" "$TMP_JSON" "$RC"
 echo "Validação concluída para a branch $BRANCH."
