@@ -11,10 +11,11 @@ BIN="$ROOT/tests/bin/gitmaster-actions"
 
 usage() {
   cat <<'HELP'
-Uso: bash tests/run.sh [--mode unit|vm|all] [--case branch|parallel|all]
+Uso: bash tests/run.sh [--mode unit|plan|vm|all] [--case branch|parallel|all]
                        [--insula-config /abs/config.yaml] [--profiles-config /abs/profiles.yaml]
 
-unit      Compila, go mod tidy -diff, go test -race e go vet (padrão; sem VM)
+unit      Compila, testa Go e também conversor YAML/CLI (padrão; sem VM)
+plan      Compila e executa somente casos de conversão (sem VM/SQLite)
 vm        Compila, executa smoke tests reais por CLI na VM descartável
 all       Testes Go e depois smoke tests reais
 branch    Dois Jobs: apenas o correspondente à branch deve executar
@@ -34,7 +35,7 @@ while (($# > 0)); do
   esac
 done
 
-case "$MODE" in unit|vm|all) ;; *) echo "[tests] --mode inválido: $MODE" >&2; exit 2 ;; esac
+case "$MODE" in unit|plan|vm|all) ;; *) echo "[tests] --mode inválido: $MODE" >&2; exit 2 ;; esac
 case "$CASE" in branch|parallel|all) ;; *) echo "[tests] --case inválido: $CASE" >&2; exit 2 ;; esac
 command -v go >/dev/null || { echo "[tests] Go não encontrado no PATH" >&2; exit 3; }
 
@@ -97,6 +98,15 @@ run_vm_case() {
   fi
   cat "$folder/verify.log"
 }
+
+if [[ "$MODE" == unit || "$MODE" == plan || "$MODE" == all ]]; then
+  printf '[tests] Validando conversor YAML pela CLI, sem VM/SQLite...\n'
+  if ! bash "$ROOT/tests/test-converter.sh" "$WORK/converter" > "$WORK/converter.log" 2>&1; then
+    cat "$WORK/converter.log" >&2
+    exit 1
+  fi
+  cat "$WORK/converter.log"
+fi
 
 if [[ "$MODE" == vm || "$MODE" == all ]]; then
   mkdir -p "$WORK/fixture"
