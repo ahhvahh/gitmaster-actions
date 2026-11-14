@@ -154,3 +154,29 @@ bash tests/run.sh --mode graph
 Se `needs` estiver vazio, um Job **pendente e permitido na branch** está pronto. Se tiver dependências, todas precisam estar em `succeeded`; uma dependência pendente/ativa gera `waiting`, e uma dependência que falhou ou foi pulada gera `blocked` depois que as demais concluírem. O agendador real reutiliza a mesma decisão do grafo.
 
 [Contrato do grafo de Jobs](docs/contratos/CONTR-006-grafo-dependencias-jobs.md).
+
+## Exemplos executáveis para InsulaVM + persistência SQLite
+
+Foram adicionados **cinco workflows YAML** em [`examples/workflow/`](examples/workflow/) e um runner para **sete cenários**: sequência de comandos, dependências/convergência, filtros por `develop`/`main`/`feature/demo`, falha intencional que bloqueia dependentes e leitura do ZIP a partir de `working_directory`.
+
+```bash
+# Validação prévia dos YAMLs, sem KVM
+bash tests/run-vm-examples.sh --dry-run
+
+# Listar casos
+bash tests/run-vm-examples.sh --list
+
+# Executar um caso em InsulaVM real
+bash tests/run-vm-examples.sh --case sequencia \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+
+# Executar os sete casos, com verificação do SQLite e de logs
+bash tests/run-vm-examples.sh --case all \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+O runner cria um ZIP fictício sem segredos e grava `actions.db`, `action.json`, `stderr.log`, `verify.log` e o código de saída da CLI por caso em `tests/work/vm-examples-*/`. O verificador confirma os Jobs, Commands, dependências, `skip_reason`, códigos de saída, integridade do banco, stdout persistido, linhas de log e desligamento da VM. Os testes KVM são **manuais**; o CI testa parser/contratos e módulos com runtime simulado.
+
+[Guia dos testes com VM](docs/guias/GUIA-012-testes-reais-insulavm.md).

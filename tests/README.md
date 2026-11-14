@@ -126,3 +126,32 @@ printf '{"lint":"succeeded","build":"succeeded","package":"succeeded","verify":"
 Cada Job é listado com `job`, `needs`, `dependents`, `has_dependencies`, `state`, `can_run` e, se houver, `waiting_for`, `blocked_by`, `reason` ou `skip_reason`. Um Job sem dependências executa **somente se** estiver pendente e não estiver excluído pelo filtro de branch. `--statuses` recebe JSON `{ "job": "pending|running|succeeded|failed|skipped|cancelled" }`. Status omitido é interpretado como pendente.
 
 Os arquivos e evidências de `tests/test-job-graph.sh` ficam em `tests/work/<execucao>/graph/`; `src/job_graph_test.go` cobre dependências diretas e transitivas, imutabilidade, condições de prontidão, falhas e branches. A avaliação não reserva slots nem executa comandos: a concorrência máxima continua controlada pelo agendador.
+
+## Suite integral de exemplos de YAML, InsulaVM e SQLite
+
+Em [`examples/workflow/`](../examples/workflow/) estão cinco workflows `smoke-01..05` para testar o executor real. A matriz [`vm-examples/cases.tsv`](vm-examples/cases.tsv) define sete cenários, branches e arquivos JSON esperados em `vm-examples/expected/`.
+
+```bash
+bash tests/run-vm-examples.sh --list
+bash tests/run-vm-examples.sh --dry-run     # testa YAML e matrizes sem VM
+
+bash tests/run-vm-examples.sh --case all \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+
+# Somente dependências, por exemplo
+bash tests/run-vm-examples.sh --case dependencias \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+
+# Via runner centralizado
+bash tests/run.sh --mode vm --case examples \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+`--case all` de `tests/run.sh` executa os testes antigos de branch/paralelismo e também os sete novos exemplos. `--output-dir` do runner independente permite escolher um diretório **vazio**, preservado para investigação. O `--dry-run` não abre banco nem VM; o `go test ./...` do CI inclui `TestVMExamplesStatic`, que valida os sete cenários usando o conversor e JobGraph reais.
+
+O verificador compilado de `tests/verifiers/vm-examples/` consulta `actions.db` diretamente, confere `PRAGMA integrity_check`, status e dados de Actions/Jobs/Commands, `needs_json`, `skip_reason`, códigos de saída, snapshots, `vm_id`, `cleanup_status=succeeded`, streams gravados em `command_outputs` e linhas em `command_log_lines`. A falha intencional (`exit 17`) precisa produzir Action `failed`, Job `falhar=failed` e dependente `nao_executar=skipped`. Ela é esperada e aprova o cenário se os registros estiverem corretos.
+
+Pré-requisitos: host Linux com `/dev/kvm`, QEMU/Libvirt, Go, `zip`, catálogo de imagens QCOW2, perfil `ci-smoke` funcional e imagem convidada com `unzip`, SSH e Cloud-Init. Logs/SQLite evidenciam a execução real; o CI não a substitui. Guia: [GUIA-012](../docs/guias/GUIA-012-testes-reais-insulavm.md).

@@ -92,3 +92,7 @@ bash tests/run.sh --mode vm --case all \
 ```
 
 O comando compila `tests/bin/gitmaster-actions`, prepara o ZIP de trabalho, verifica os dois Jobs por filtro de branch e a sequência de Jobs dependentes/paralelos, preservando os resultados em `tests/work/`. [Guia de testes](../../tests/README.md).
+
+## Exemplos adicionais de execução real
+
+Cinco YAMLs `smoke-01..05` em [`examples/workflow`](../../examples/workflow/) e sete cenários em [`tests/vm-examples/cases.tsv`](../../tests/vm-examples/cases.tsv) exercitam status, filtros, dependências, falhas e acesso a arquivos ZIP. O script [`tests/run-vm-examples.sh`](../../tests/run-vm-examples.sh) executa os workflows em VMs reais e confere persistência SQLite, inclusive stdout, logs e cleanup. Consulte [GUIA-012](GUIA-012-testes-reais-insulavm.md).

@@ -27,3 +27,5 @@ Fontes canônicas, vinculadas ao código Go e aos testes. Os documentos em `migr
 - [CONTR-005 — Conversor YAML para lista Job/Command](contratos/CONTR-005-conversor-yaml.md)
 
 - [CONTR-006 — Grafo de dependências e avaliação de prontidão dos Jobs](contratos/CONTR-006-grafo-dependencias-jobs.md)
+
+- [GUIA-012 — Suite integral de YAMLs e validação SQLite na InsulaVM real](guias/GUIA-012-testes-reais-insulavm.md)
