@@ -109,3 +109,20 @@ Em `tests/plan-cases/valid.tsv` estão os casos válidos e seus JSONs esperados;
 A saída para Jobs paralelos define apenas uma **linearização topológica válida**, não os instantes reais de disparo ou conclusão. O converter não executa comandos; resultados condicionados ao êxito dos Steps são desconhecidos até o runtime. Jobs excluídos e seus dependentes não produzem linhas. Quando nenhum Job é elegível, a saída é `[]` (a Action real rejeita isso).
 
 Contrato completo: [CONTR-005](../docs/contratos/CONTR-005-conversor-yaml.md).
+
+## Grafo de dependências e estado dos Jobs
+
+`bash tests/run.sh --mode graph` compila o binário e valida o subcomando `graph` em cinco cenários: DAG inicial, dependências concluídas, falha bloqueante, filtro `develop` e filtro `main`. `bash tests/run.sh` inclui estes cenários além dos unitários e da matriz de conversão YAML. O modo `graph` não exige KVM/InsulaVM/SQLite.
+
+```bash
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml
+
+printf '{"lint":"succeeded","build":"succeeded","package":"succeeded","verify":"succeeded"}\n' > /tmp/gm-status.json
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml --statuses /tmp/gm-status.json
+
+./tests/bin/gitmaster-actions graph --branch develop --file examples/workflow/branch-filter-smoke.yaml
+```
+
+Cada Job é listado com `job`, `needs`, `dependents`, `has_dependencies`, `state`, `can_run` e, se houver, `waiting_for`, `blocked_by`, `reason` ou `skip_reason`. Um Job sem dependências executa **somente se** estiver pendente e não estiver excluído pelo filtro de branch. `--statuses` recebe JSON `{ "job": "pending|running|succeeded|failed|skipped|cancelled" }`. Status omitido é interpretado como pendente.
+
+Os arquivos e evidências de `tests/test-job-graph.sh` ficam em `tests/work/<execucao>/graph/`; `src/job_graph_test.go` cobre dependências diretas e transitivas, imutabilidade, condições de prontidão, falhas e branches. A avaliação não reserva slots nem executa comandos: a concorrência máxima continua controlada pelo agendador.

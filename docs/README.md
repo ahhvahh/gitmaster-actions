@@ -25,3 +25,5 @@ Fontes canônicas, vinculadas ao código Go e aos testes. Os documentos em `migr
 - [GUIA-011 — Execução de workflow com ZIP na VM](guias/GUIA-011-execucao-zip-vm.md)
 
 - [CONTR-005 — Conversor YAML para lista Job/Command](contratos/CONTR-005-conversor-yaml.md)
+
+- [CONTR-006 — Grafo de dependências e avaliação de prontidão dos Jobs](contratos/CONTR-006-grafo-dependencias-jobs.md)

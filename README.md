@@ -129,3 +129,28 @@ bash tests/run.sh --mode plan  # verifica arquivo a arquivo os casos da matriz
 É uma **previsão** determinística, não o histórico real de execução: Jobs paralelos não têm ordem de conclusão garantida e falhas futuras de comandos não podem ser antecipadas. A saída inclui apenas Jobs elegíveis, mesmo quando todos forem filtrados (lista vazia). O runtime continua recusando Action sem Jobs executáveis.
 
 Documentação e exemplos: [Converter](docs/contratos/CONTR-005-conversor-yaml.md) e [matriz de casos](tests/plan-cases/valid.tsv).
+
+## Consultar dependências e Jobs prontos para executar
+
+O objeto `NewJobGraph(yamlBytes, ConvertOptions)` monta um grafo acíclico com dependências diretas (`Needs`), Jobs dependentes (`Dependents`) e regras de branch (`SkipReason`). `JobGraph.Decision(job, statuses)` informa `CanRun`, `State`, `WaitingFor`, `BlockedBy` e `Reason`; `ReadyJobs(statuses)` retorna todos os Jobs elegíveis agora. Não usa banco nem VM.
+
+```go
+graph, err := gitmasteractions.NewJobGraph(data, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1, Branch: "develop",
+})
+if err != nil { return err }
+decision, err := graph.Decision("build", map[string]string{"lint": "succeeded"})
+// decision.CanRun == true: lint terminou com sucesso
+ready, err := graph.ReadyJobs(map[string]string{"lint": "succeeded"})
+```
+
+```bash
+bash tests/build.sh
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml --statuses /tmp/job-statuses.json
+bash tests/run.sh --mode graph
+```
+
+Se `needs` estiver vazio, um Job **pendente e permitido na branch** está pronto. Se tiver dependências, todas precisam estar em `succeeded`; uma dependência pendente/ativa gera `waiting`, e uma dependência que falhou ou foi pulada gera `blocked` depois que as demais concluírem. O agendador real reutiliza a mesma decisão do grafo.
+
+[Contrato do grafo de Jobs](docs/contratos/CONTR-006-grafo-dependencias-jobs.md).

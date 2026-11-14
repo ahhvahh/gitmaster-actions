@@ -76,3 +76,23 @@ pairs, err := gitmasteractions.ConvertYAML(yamlBytes, gitmasteractions.ConvertOp
 `CommandPair` contém exclusivamente `Job string` e `Command string`, com propriedades JSON `job` e `command`. O formato deve ser indicado; `ConvertOptions.EventType` permite pré-validar gatilhos `commit`/`push` usando apenas a branch, sem uma origem Git completa. Em `action-v1`, não há filtros nem gatilhos, e a ordem original dos Jobs e Commands é mantida.
 
 O planejamento respeita `needs` e filtros, mas **não prevê o resultado de comandos que ainda não foram executados**. Para Jobs sem dependência, a ordem é determinística conforme o parser do executor; trabalhos paralelos poderão executar em outra ordem real. [CONTR-005](../../contratos/CONTR-005-conversor-yaml.md).
+
+## Grafo imutável de dependências Job → Job
+
+```go
+graph, err := gitmasteractions.NewJobGraph(yamlData, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1, Branch: "develop",
+})
+if err != nil { return err }
+needs, err := graph.Dependencies("build")       // dependências diretas
+dependents, err := graph.Dependents("lint")      // Jobs que dependem de lint
+independent, err := graph.HasDependencies("lint") // false se não houver needs
+transitive, err := graph.DependsOn("release", "lint")
+decision, err := graph.Decision("build", map[string]string{"lint": "succeeded"})
+ready, err := graph.ReadyJobs(map[string]string{"lint": "succeeded"})
+all, err := graph.Evaluate(map[string]string{"lint": "succeeded"})
+```
+
+`JobGraph.Jobs()` retorna a estrutura em ordem topológica determinística, com cópia das listas; nenhuma consulta altera o grafo. `Decision` considera status persistidos (`pending`, `running`, `succeeded`, `failed`, `skipped`, `cancelled`; ausente = `pending`), filtros de branch e `needs`; `CanRun` só é verdadeiro quando o Job está pendente, permitido pela branch, e todas as dependências estão `succeeded`. Outros estados são explicitamente `waiting`, `blocked`, `skipped` ou o próprio status corrente. A execução real usa o mesmo motor para decidir a prontidão.
+
+Referência: [CONTR-006](../../contratos/CONTR-006-grafo-dependencias-jobs.md).

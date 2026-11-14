@@ -70,3 +70,7 @@ Para um ensaio reprodutível use [dependency-parallel-smoke.yaml](../../examples
 ## Projeção de plano para testes
 
 `ConvertYAML` e `gitmaster-actions plan` reutilizam o parser deste contrato para extrair os comandos executáveis após filtros de branch e dependências estáticas. A lista de pares possui apenas os campos `job` e `command`; não é o histórico real da VM. Ver [CONTR-005](CONTR-005-conversor-yaml.md).
+
+## Consulta de dependências e prontidão
+
+O `JobGraph` expõe as arestas diretas e transitivas derivadas de `jobs.<name>.needs`, o caminho inverso dos dependentes e a avaliação de prontidão por status. O agendador reutiliza suas decisões. A validação de ciclos, nomes inexistentes e filtros permanece no parser YAML comum. [CONTR-006](CONTR-006-grafo-dependencias-jobs.md).
