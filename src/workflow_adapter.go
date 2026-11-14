@@ -276,7 +276,13 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 	return p, nil
 }
 func parseActionV1(data []byte) (executionPlan, error) {
-	m, err := parseManifest(data, "")
+    return parseActionV1WithMode(data,true)
+}
+
+// The preview and the executor share the exact job/command extraction.
+// Only the execution path checks that import files already exist.
+func parseActionV1WithMode(data []byte,checkImports bool) (executionPlan, error) {
+    m, err := parseManifestWithMode(data,"",checkImports)
 	if err != nil {
 		return executionPlan{}, err
 	}

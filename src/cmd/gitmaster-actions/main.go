@@ -22,13 +22,13 @@ func output(v any)error {
 }
 func run(args []string)error{
     if len(args)==0||args[0]=="--help"||args[0]=="help"{
-        fmt.Println("usage: gitmaster-actions run|actions|jobs|commands|logs|outputs|profiles [options]")
+        fmt.Println("usage: gitmaster-actions plan|run|actions|jobs|commands|logs|outputs|profiles [options]")
         return nil
     }
     cmd:=args[0]
     sub:=""
     rest:=args[1:]
-    if cmd!="run" {
+    if cmd!="run" && cmd!="plan" {
         if len(rest)==0{return errors.New("subcommand required")}
         sub=rest[0]
         rest=rest[1:]
@@ -37,7 +37,10 @@ func run(args []string)error{
     db:=f.String("db","actions.db","GitMaster Actions private SQLite")
     config:=f.String("insula-config","","InsulaVM administrator config")
     file:=f.String("file","","YAML manifest path")
-    format:=f.String("format","action-v1","action-v1 or gitmaster-workflow-v1")
+    defaultFormat:="action-v1"
+    if cmd=="plan"{ defaultFormat="gitmaster-workflow-v1" }
+    format:=f.String("format",defaultFormat,"action-v1 or gitmaster-workflow-v1")
+    event:=f.String("event","manual","plan only: manual, commit or push for trigger checks")
     branch:=f.String("branch","","working branch for workflow filters")
     archive:=f.String("archive","","absolute repository .zip or .tar.gz snapshot")
     profilesConfig:=f.String("profiles-config","","administrator YAML catalog of frozen QCOW2 profiles")
@@ -61,6 +64,24 @@ func run(args []string)error{
     if len(f.Args())!=0{return errors.New("unexpected positional arguments")}
     ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM)
     defer stop()
+    if cmd=="plan"{
+        // Planner is pure: do not create an Engine, SQLite DB, or VM here.
+        if (*file=="")==!*stdin{return errors.New("plan requires exactly one --file or --stdin")}
+        if *archive!=""{return errors.New("plan does not need --archive")}
+        var data []byte
+        var err error
+        if *stdin {
+            data,err=io.ReadAll(io.LimitReader(os.Stdin,(1<<20)+1))
+        } else {
+            data,err=os.ReadFile(*file)
+        }
+        if err!=nil{return err}
+        rows,err:=actions.ConvertYAML(data,actions.ConvertOptions{
+            Format:actions.YAMLFormat(*format),Branch:*branch,EventType:*event,
+        })
+        if err!=nil{return err}
+        return output(rows)
+    }
     if cmd=="profiles"{
         if *config==""{return errors.New("--insula-config is required")}
         switch sub{

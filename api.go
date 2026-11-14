@@ -20,6 +20,8 @@ type (
 	OutputWriter   = core.OutputWriter
 	GuestCommand   = core.GuestCommand
 	YAMLFormat     = core.YAMLFormat
+	CommandPair    = core.CommandPair
+	ConvertOptions = core.ConvertOptions
 	ActionOrigin   = core.ActionOrigin
 	SubmitRequest  = core.SubmitRequest
 	RuntimeEvent   = core.RuntimeEvent
@@ -40,6 +42,7 @@ const (
 )
 
 var (
+	ConvertYAML              = core.ConvertYAML
 	New                      = core.New
 	NewRuntime               = core.NewRuntime
 	NewRuntimeWithProfiles   = core.NewRuntimeWithProfiles
