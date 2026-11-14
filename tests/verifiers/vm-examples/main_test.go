@@ -1,6 +1,7 @@
 package main
 
 import (
+ "database/sql"
  "encoding/json"
  "os"
  "path/filepath"
@@ -101,4 +102,80 @@ func TestVMExamplesVerifierRejectsMissingEvidence(t *testing.T) {
  if err:=parseFiles(filepath.Join(dir,"missing-action.json"),filepath.Join(dir,"missing.db"),expected,0);err==nil{
   t.Fatal("accepted missing CLI/SQLite evidence")
  }
+}
+
+
+// Confirm the verifier accepts a consistent SQLite/CLI result, then rejects
+// tampering with persisted command output. This exercises the verifier
+// without claiming that a physical VM was used.
+func TestVMExamplesVerifierSQLiteAndLogs(t *testing.T){
+ dir:=t.TempDir()
+ dbFile:=filepath.Join(dir,"actions.db")
+ db,err:=sql.Open("sqlite",dbFile)
+ if err!=nil{t.Fatal(err)}
+ statements:=[]string{
+  "CREATE TABLE actions(id TEXT,status TEXT,vm_id TEXT,cleanup_status TEXT,material_sha256 TEXT)",
+  "CREATE TABLE jobs(id TEXT,action_id TEXT,name TEXT,status TEXT,skip_reason TEXT,needs_json TEXT)",
+  "CREATE TABLE commands(id TEXT,job_id TEXT,position INTEGER,status TEXT,exit_code INTEGER,failure_kind TEXT,command_text TEXT)",
+  "CREATE TABLE command_outputs(command_id TEXT,sequence_no INTEGER,stream_type TEXT,payload BLOB)",
+  "CREATE TABLE command_log_lines(command_id TEXT,line_no INTEGER,stream_type TEXT,payload BLOB)",
+ }
+ for _,stmt:=range statements{
+  if _,err:=db.Exec(stmt);err!=nil{t.Fatal(err)}
+ }
+ hash:=strings.Repeat("a",64)
+ if _,err=db.Exec("INSERT INTO actions VALUES(?,?,?,?,?)","action-1","succeeded","vm-1","succeeded",hash);err!=nil{t.Fatal(err)}
+ if _,err=db.Exec("INSERT INTO jobs VALUES(?,?,?,?,?,?)","job-1","action-1","one","succeeded","","[]");err!=nil{t.Fatal(err)}
+ text:="printf 'MARKER_OK\n'"
+ if _,err=db.Exec("INSERT INTO commands VALUES(?,?,?,?,?,?,?)","cmd-1","job-1",0,"succeeded",0,"",text);err!=nil{t.Fatal(err)}
+ if _,err=db.Exec("INSERT INTO command_outputs VALUES(?,?,?,?)","cmd-1",0,"stdout",[]byte("MARKER_OK\n"));err!=nil{t.Fatal(err)}
+ if _,err=db.Exec("INSERT INTO command_log_lines VALUES(?,?,?,?)","cmd-1",1,"stdout",[]byte("MARKER_OK\n"));err!=nil{t.Fatal(err)}
+ if err:=db.Close();err!=nil{t.Fatal(err)}
+
+ code:=0
+ spec:=expectedCase{
+  ActionStatus:"succeeded",
+  Jobs:map[string]expectedJob{"one":{
+   Status:"succeeded",Needs:[]string{},
+   Commands:[]expectedCommand{{Status:"succeeded",ExitCode:&code,OutputContains:"MARKER_OK"}},
+  }},
+ }
+ actual:=actualCase{}
+ actual.Action.ID="action-1"
+ actual.Action.Status="succeeded"
+ actual.VMID="vm-1"
+ actual.VMProfile="ci-smoke"
+ actual.CleanupStatus="succeeded"
+ actual.MaterialSHA256=hash
+ actual.Events=[]struct{}{{}}
+ var item actualJob
+ item.Job.ID="job-1"
+ item.Job.Name="one"
+ item.Job.Status="succeeded"
+ item.Needs=[]string{}
+ var command actualCommand
+ command.Command.ID="cmd-1"
+ command.Command.Text=text
+ command.Command.Status="succeeded"
+ command.Command.ExitCode=&code
+ item.Commands=[]actualCommand{command}
+ actual.Jobs=[]actualJob{item}
+ writeJSON:=func(path string,value any){
+  t.Helper()
+  contents,err:=json.Marshal(value)
+  if err!=nil{t.Fatal(err)}
+  if err:=os.WriteFile(path,contents,0600);err!=nil{t.Fatal(err)}
+ }
+ jsonPath:=filepath.Join(dir,"action.json")
+ specPath:=filepath.Join(dir,"expected.json")
+ writeJSON(jsonPath,actual)
+ writeJSON(specPath,spec)
+
+ if err:=parseFiles(jsonPath,dbFile,specPath,0);err!=nil{t.Fatalf("valid persisted evidence rejected: %v",err)}
+
+ db,err=sql.Open("sqlite",dbFile)
+ if err!=nil{t.Fatal(err)}
+ if _,err=db.Exec("DELETE FROM command_outputs");err!=nil{t.Fatal(err)}
+ if err=db.Close();err!=nil{t.Fatal(err)}
+ if err:=parseFiles(jsonPath,dbFile,specPath,0);err==nil{t.Fatal("accepted missing persisted command output")}
 }
