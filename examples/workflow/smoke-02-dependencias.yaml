@@ -1,0 +1,43 @@
+# Testa DAG com dois Jobs independentes apos uma preparacao.
+# O agendador pode iniciar compilar/testar simultaneamente, mas
+# os comandos da mesma VM continuam serializados pelo InsulaVM.
+version: 1
+name: smoke-dependencias
+vm_profile: ci-smoke
+max_parallel_jobs: 3
+jobs:
+  preparar:
+    steps:
+      - name: Preparar workspace
+        run: |
+          set -eu
+          mkdir -p .gm-smoke
+          printf 'base\n' > .gm-smoke/entrada.txt
+          printf 'DAG_PREPARAR_OK\n'
+  compilar:
+    needs: [preparar]
+    steps:
+      - name: Simular build
+        run: |
+          set -eu
+          test "$(cat .gm-smoke/entrada.txt)" = base
+          printf 'build\n' > .gm-smoke/build.ok
+          printf 'DAG_BUILD_OK\n'
+  testar:
+    needs: [preparar]
+    steps:
+      - name: Simular testes
+        run: |
+          set -eu
+          test -f .gm-smoke/entrada.txt
+          printf 'test\n' > .gm-smoke/test.ok
+          printf 'DAG_TESTE_OK\n'
+  publicar:
+    needs: [compilar, testar]
+    steps:
+      - name: Verificar convergencia
+        run: |
+          set -eu
+          test "$(cat .gm-smoke/build.ok)" = build
+          test "$(cat .gm-smoke/test.ok)" = test
+          printf 'DAG_CONVERGENCIA_OK\n'
