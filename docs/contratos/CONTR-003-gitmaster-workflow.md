@@ -66,3 +66,7 @@ O CLI aceita origem manual contendo somente `branch` validada, sem inventar SHA 
 - O CLI `run --details` apresenta o grafo persistido, estados `succeeded/failed/skipped`, códigos de retorno, mensagens e eventos de retry.
 
 Para um ensaio reprodutível use [dependency-parallel-smoke.yaml](../../examples/workflow/dependency-parallel-smoke.yaml).
+
+## Projeção de plano para testes
+
+`ConvertYAML` e `gitmaster-actions plan` reutilizam o parser deste contrato para extrair os comandos executáveis após filtros de branch e dependências estáticas. A lista de pares possui apenas os campos `job` e `command`; não é o histórico real da VM. Ver [CONTR-005](CONTR-005-conversor-yaml.md).

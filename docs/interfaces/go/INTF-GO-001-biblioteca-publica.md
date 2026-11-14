@@ -59,3 +59,20 @@ Use `SubmitRequest.Format=FormatGitMasterV1` para YAML `version: 1` de `.gitmast
 `Options.ProfilesConfigPath` aponta um YAML confiável no servidor que declara um ou vários perfis (`name`, `image_path`, `memory_mib`, `vcpus`, `workspace`). `LoadVMProfilesConfig(path)` valida esse catálogo. `NewRuntimeWithProfiles(insulaConfig, profilesConfig)` inicia o adaptador. Ao selecionar um perfil ainda não registrado, o InsulaVM copia o QCOW2 para seu armazenamento gerenciado; imagens já registradas não são substituídas automaticamente.
 
 `SubmitRequest.ArchivePath` recebe o caminho **absoluto** do ZIP do repositório ou TAR.GZ legado. `ActionOrigin.Branch` habilita os filtros de branch. Os Jobs/Commands são persistidos antes de executar a VM. O workspace por perfil é usado na extração e na execução de cada comando. `DeployToVM` da InsulaVM recebe apenas TAR.GZ; para ZIP o adaptador usa `ImportToVM` e `ExecVM` para executar `unzip` no convidado. `unzip` deve existir na imagem congelada.
+
+## Conversor de YAML em pares Job/Command
+
+API **pura** `ConvertYAML(yamlData []byte, opts ConvertOptions) ([]CommandPair, error)` disponível no módulo raiz e em `/src`; não necessita `Engine`, SQLite, snapshot, InsulaVM nem credenciais.
+
+```go
+pairs, err := gitmasteractions.ConvertYAML(yamlBytes, gitmasteractions.ConvertOptions{
+  Format: gitmasteractions.FormatGitMasterV1,
+  Branch: "develop",
+  EventType: "manual",
+})
+// []CommandPair{ {Job: "job_develop", Command: "..."} }
+```
+
+`CommandPair` contém exclusivamente `Job string` e `Command string`, com propriedades JSON `job` e `command`. O formato deve ser indicado; `ConvertOptions.EventType` permite pré-validar gatilhos `commit`/`push` usando apenas a branch, sem uma origem Git completa. Em `action-v1`, não há filtros nem gatilhos, e a ordem original dos Jobs e Commands é mantida.
+
+O planejamento respeita `needs` e filtros, mas **não prevê o resultado de comandos que ainda não foram executados**. Para Jobs sem dependência, a ordem é determinística conforme o parser do executor; trabalhos paralelos poderão executar em outra ordem real. [CONTR-005](../../contratos/CONTR-005-conversor-yaml.md).

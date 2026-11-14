@@ -107,3 +107,25 @@ bash tests/run.sh --mode vm --case parallel --insula-config /etc/insulavm/config
 ```
 
 Os scripts antigos em `scripts/` permanecem operacionais. A execução real exige KVM, Libvirt e o perfil QCOW2 `ci-smoke`.
+
+## Converter YAML → lista de comandos (sem VM)
+
+A API pública `ConvertYAML(yamlData, ConvertOptions)` interpreta os mesmos formatos de YAML do executor e retorna uma fatia de pares **exatamente com duas strings**, `job` e `command`. A conversão aplica filtros de branch, valida `needs` e mantém ordem topológica determinística dos Jobs e a ordem dos comandos dentro do Job; Jobs excluídos por branch ou dependência não entram no resultado. Não abre SQLite e não inicializa a InsulaVM.
+
+```go
+pairs, err := gitmasteractions.ConvertYAML(data, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1,
+    Branch: "develop",
+})
+// pairs: []gitmasteractions.CommandPair{{Job: "job_develop", Command: "..."}}
+```
+
+```bash
+bash tests/build.sh
+./tests/bin/gitmaster-actions plan --format gitmaster-workflow-v1 --branch develop --file examples/workflow/branch-filter-smoke.yaml
+bash tests/run.sh --mode plan  # verifica arquivo a arquivo os casos da matriz
+```
+
+É uma **previsão** determinística, não o histórico real de execução: Jobs paralelos não têm ordem de conclusão garantida e falhas futuras de comandos não podem ser antecipadas. A saída inclui apenas Jobs elegíveis, mesmo quando todos forem filtrados (lista vazia). O runtime continua recusando Action sem Jobs executáveis.
+
+Documentação e exemplos: [Converter](docs/contratos/CONTR-005-conversor-yaml.md) e [matriz de casos](tests/plan-cases/valid.tsv).

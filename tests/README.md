@@ -81,3 +81,31 @@ rm -rf tests/bin tests/work
 ```
 
 Scripts antigos em `scripts/tests/` permanecem compatíveis. A execução com VM real não é realizada pelos runners de CI sem KVM.
+
+## Motor de conversão YAML e matriz de variações
+
+O conversor devolve uma lista plana `[ {"job": "...", "command": "..."} ]` sem abrir o SQLite, importar ZIP ou iniciar VM. Os parsers suportados são `gitmaster-workflow-v1` e `action-v1`; nomes de Jobs, `needs`, filtros `include/exclude`, gatilhos `commit/push`, sequência dos passos, arrays do legado, YAML em linha, aliases e comandos multilinha são cobertos.
+
+```bash
+bash tests/run.sh --mode plan
+
+# Ou inspecione qualquer arquivo de forma independente
+bash tests/build.sh
+./tests/bin/gitmaster-actions plan --format gitmaster-workflow-v1 \
+  --branch develop --file examples/workflow/branch-filter-smoke.yaml
+
+# O arquivo também pode vir por stdin
+cat tests/plan-cases/needs-dag.yaml | ./tests/bin/gitmaster-actions plan --stdin
+
+# Formato action-v1 (lista ordenada de jobs e strings de comandos)
+./tests/bin/gitmaster-actions plan --format action-v1 --file tests/plan-cases/legacy.yaml
+
+# Validar gatilhos de um evento: --event commit|push
+./tests/bin/gitmaster-actions plan --branch develop --event commit --file tests/plan-cases/triggers.yaml
+```
+
+Em `tests/plan-cases/valid.tsv` estão os casos válidos e seus JSONs esperados; `invalid.tsv` contém os YAMLs que devem falhar e suas mensagens esperadas. `tests/test-converter.sh` executa a matriz pela **CLI**; o teste Go `TestConverterFixtureMatrix` usa exatamente os mesmos casos. `TestConverterExhaustiveDAGAndBranchMasks` cobre 2.048 combinações de grafos acíclicos com quatro Jobs, máscaras de branch e dependências.
+
+A saída para Jobs paralelos define apenas uma **linearização topológica válida**, não os instantes reais de disparo ou conclusão. O converter não executa comandos; resultados condicionados ao êxito dos Steps são desconhecidos até o runtime. Jobs excluídos e seus dependentes não produzem linhas. Quando nenhum Job é elegível, a saída é `[]` (a Action real rejeita isso).
+
+Contrato completo: [CONTR-005](../docs/contratos/CONTR-005-conversor-yaml.md).
