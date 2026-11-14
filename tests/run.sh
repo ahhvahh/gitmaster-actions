@@ -11,7 +11,7 @@ BIN="$ROOT/tests/bin/gitmaster-actions"
 
 usage() {
   cat <<'HELP'
-Uso: bash tests/run.sh [--mode unit|plan|graph|vm|all] [--case branch|parallel|all]
+Uso: bash tests/run.sh [--mode unit|plan|graph|vm|all] [--case branch|parallel|examples|all]
                        [--insula-config /abs/config.yaml] [--profiles-config /abs/profiles.yaml]
 
 unit      Compila, testa Go e também conversor YAML/CLI (padrão; sem VM)
@@ -21,6 +21,7 @@ vm        Compila, executa smoke tests reais por CLI na VM descartável
 all       Testes Go e depois smoke tests reais
 branch    Dois Jobs: apenas o correspondente à branch deve executar
 parallel  Jobs paralelos/dependentes, filtros, falha intencional e skips
+examples  Sete cenarios com InsulaVM real e verificacao direta de SQLite/logs
 Resultados: tests/bin/gitmaster-actions e tests/work/<execucao>/.
 HELP
 }
@@ -37,7 +38,7 @@ while (($# > 0)); do
 done
 
 case "$MODE" in unit|plan|graph|vm|all) ;; *) echo "[tests] --mode inválido: $MODE" >&2; exit 2 ;; esac
-case "$CASE" in branch|parallel|all) ;; *) echo "[tests] --case inválido: $CASE" >&2; exit 2 ;; esac
+case "$CASE" in branch|parallel|examples|all) ;; *) echo "[tests] --case inválido: $CASE" >&2; exit 2 ;; esac
 command -v go >/dev/null || { echo "[tests] Go não encontrado no PATH" >&2; exit 3; }
 
 if [[ "$MODE" == vm || "$MODE" == all ]]; then
@@ -119,6 +120,21 @@ if [[ "$MODE" == unit || "$MODE" == graph || "$MODE" == all ]]; then
 fi
 
 if [[ "$MODE" == vm || "$MODE" == all ]]; then
+  if [[ "$CASE" == examples || "$CASE" == all ]]; then
+    echo '[tests] Executando exemplos integrais com validacao direta do SQLite...'
+    bash "$ROOT/tests/run-vm-examples.sh" \
+      --case all \
+      --insula-config "$CONFIG" \
+      --profiles-config "$PROFILES" \
+      --output-dir "$WORK/examples" \
+      --bin "$BIN" > "$WORK/examples.log" 2>&1 || {
+        cat "$WORK/examples.log" >&2
+        exit 1
+      }
+    cat "$WORK/examples.log"
+  fi
+
+  if [[ "$CASE" == branch || "$CASE" == parallel || "$CASE" == all ]]; then
   mkdir -p "$WORK/fixture"
   cp -- "$ROOT/tests/fixtures/README.txt" "$WORK/fixture/README.txt"
   (cd "$WORK/fixture" && zip -q "$WORK/snapshot.zip" README.txt)
@@ -138,6 +154,7 @@ if [[ "$MODE" == vm || "$MODE" == all ]]; then
         "$ROOT/examples/workflow/dependency-parallel-smoke.yaml" \
         "$ROOT/tests/verifiers/parallel/verify.go"
     done
+  fi
   fi
 fi
 
