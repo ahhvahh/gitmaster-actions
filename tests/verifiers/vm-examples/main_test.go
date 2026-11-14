@@ -45,7 +45,11 @@ func TestVMExamplesStatic(t *testing.T) {
     if !sameStrings(node.Needs,job.Needs){
      t.Errorf("job %s needs mismatch: %v vs %v",node.Name,node.Needs,job.Needs)
     }
-    if job.Status=="skipped"{
+    // Branch filtering is static; failure propagation is only known
+    // at runtime, so dependent Commands still appear in ConvertYAML.
+    staticallyFiltered:=strings.HasPrefix(job.SkipReason,"branch_filter")||
+      strings.HasPrefix(job.SkipReason,"dependency_filtered:")
+    if staticallyFiltered{
      if node.SkipReason!=job.SkipReason{
       t.Errorf("job %s filtered reason=%q expected=%q",node.Name,node.SkipReason,job.SkipReason)
      }
@@ -61,7 +65,10 @@ func TestVMExamplesStatic(t *testing.T) {
    for _,pair:=range pairs{
     j,ok:=spec.Jobs[pair.Job]
     if !ok{t.Fatalf("unexpected command Job %s",pair.Job)}
-    if j.Status=="skipped"{t.Fatalf("skipped Job %s planned command %s",pair.Job,pair.Command)}
+    if strings.HasPrefix(j.SkipReason,"branch_filter")||
+       strings.HasPrefix(j.SkipReason,"dependency_filtered:"){
+       t.Fatalf("statically skipped Job %s planned command %s",pair.Job,pair.Command)
+    }
     position:=used[pair.Job]
     if position>=len(j.Commands){t.Fatalf("too many commands in %s",pair.Job)}
     marker:=j.Commands[position].OutputContains
