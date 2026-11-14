@@ -11,11 +11,12 @@ BIN="$ROOT/tests/bin/gitmaster-actions"
 
 usage() {
   cat <<'HELP'
-Uso: bash tests/run.sh [--mode unit|plan|vm|all] [--case branch|parallel|all]
+Uso: bash tests/run.sh [--mode unit|plan|graph|vm|all] [--case branch|parallel|all]
                        [--insula-config /abs/config.yaml] [--profiles-config /abs/profiles.yaml]
 
 unit      Compila, testa Go e também conversor YAML/CLI (padrão; sem VM)
 plan      Compila e executa somente casos de conversão (sem VM/SQLite)
+graph     Compila e testa o grafo de dependências, sem VM/SQLite
 vm        Compila, executa smoke tests reais por CLI na VM descartável
 all       Testes Go e depois smoke tests reais
 branch    Dois Jobs: apenas o correspondente à branch deve executar
@@ -35,11 +36,11 @@ while (($# > 0)); do
   esac
 done
 
-case "$MODE" in unit|plan|vm|all) ;; *) echo "[tests] --mode inválido: $MODE" >&2; exit 2 ;; esac
+case "$MODE" in unit|plan|graph|vm|all) ;; *) echo "[tests] --mode inválido: $MODE" >&2; exit 2 ;; esac
 case "$CASE" in branch|parallel|all) ;; *) echo "[tests] --case inválido: $CASE" >&2; exit 2 ;; esac
 command -v go >/dev/null || { echo "[tests] Go não encontrado no PATH" >&2; exit 3; }
 
-if [[ "$MODE" != unit ]]; then
+if [[ "$MODE" == vm || "$MODE" == all ]]; then
   command -v zip >/dev/null || { echo "[tests] zip não encontrado" >&2; exit 3; }
   if [[ -z "$CONFIG" || -z "$PROFILES" ]]; then
     echo "[tests] --insula-config e --profiles-config são obrigatórios com VM" >&2
@@ -106,6 +107,15 @@ if [[ "$MODE" == unit || "$MODE" == plan || "$MODE" == all ]]; then
     exit 1
   fi
   cat "$WORK/converter.log"
+fi
+
+if [[ "$MODE" == unit || "$MODE" == graph || "$MODE" == all ]]; then
+  printf '[tests] Validando grafo de dependências e prontidão pela CLI...\n'
+  if ! bash "$ROOT/tests/test-job-graph.sh" "$WORK/graph" > "$WORK/graph.log" 2>&1; then
+    cat "$WORK/graph.log" >&2
+    exit 1
+  fi
+  cat "$WORK/graph.log"
 fi
 
 if [[ "$MODE" == vm || "$MODE" == all ]]; then
