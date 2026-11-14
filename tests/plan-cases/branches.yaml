@@ -1,0 +1,31 @@
+version: 1
+name: branches
+vm_profile: ci-smoke
+jobs:
+  shared:
+    steps:
+      - name: always
+        run: echo shared
+  main_job:
+    branches:
+      include: [main]
+    steps:
+      - name: main
+        run: echo main
+  restricted:
+    branches:
+      include: [develop, main]
+      exclude: [main]
+    steps:
+      - name: develop only
+        run: echo develop
+  after_main:
+    needs: [main_job]
+    steps:
+      - name: depends on main
+        run: echo after_main
+  after_restricted:
+    needs: [restricted]
+    steps:
+      - name: depends on develop
+        run: echo after_develop

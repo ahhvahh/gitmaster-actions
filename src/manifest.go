@@ -30,6 +30,13 @@ type manifest struct {
     Logging struct{CaptureStdin bool `yaml:"capture_stdin"`}`yaml:"logging"`
 }
 func parseManifest(data []byte,baseDir string)(manifest,error){
+    return parseManifestWithMode(data,baseDir,true)
+}
+
+// parseManifestWithMode keeps the same YAML/business validations for both
+// execution and preview. In preview mode, imports are metadata: paths are
+// validated syntactically but never accessed on disk.
+func parseManifestWithMode(data []byte,baseDir string,checkImports bool)(manifest,error){
     var m manifest
     if len(data)==0||len(data)>1<<20{return m,errors.New("YAML must be 1..1048576 bytes")}
     decoder:=yaml.NewDecoder(bytes.NewReader(data))
@@ -61,13 +68,19 @@ func parseManifest(data []byte,baseDir string)(manifest,error){
     if len(m.Action.Imports)>8{return m,errors.New("too many imports")}
     for i,item:=range m.Action.Imports{
         source:=item.Source
+        if strings.TrimSpace(source)=="" || strings.ContainsRune(source,0) {
+            return m,errors.New("import path must be non-empty and contain no NUL")
+        }
+        if !strings.HasSuffix(strings.ToLower(source),".tar.gz") && !strings.HasSuffix(strings.ToLower(source),".zip") {
+            return m,errors.New("imports must be .tar.gz or .zip archives")
+        }
+        if !checkImports { continue }
         if !filepath.IsAbs(source) {
             if baseDir==""{return m,errors.New("RunYAML imports must be absolute paths")}
             source=filepath.Join(baseDir,source)
         }
         source,err:=filepath.Abs(source)
         if err!=nil{return m,err}
-        if !strings.HasSuffix(strings.ToLower(source),".tar.gz") {return m,errors.New("imports must be .tar.gz archives")}
         fi,err:=os.Lstat(source)
         if err!=nil{return m,err}
         if !fi.Mode().IsRegular() {return m,errors.New("import must be a regular file")}

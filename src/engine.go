@@ -18,6 +18,8 @@ import (
 type Options struct {
     DatabasePath string
     InsulaConfigPath string
+    // ProfilesConfigPath is an administrator-managed YAML catalog of frozen QCOW2 images.
+    ProfilesConfigPath string
     StartupScripts map[string]string
     ImagesDir string
     Workers int

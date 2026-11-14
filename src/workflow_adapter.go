@@ -51,6 +51,7 @@ type plannedJob struct {
 type executionPlan struct {
 	Name, Profile string
 	Jobs          []plannedJob
+	MaxParallelJobs int
 	ArchivePath   string
 }
 
@@ -62,9 +63,13 @@ func validateOrigin(o ActionOrigin) error {
 	if o.EventType != "" && o.EventType != "commit" && o.EventType != "push" && o.EventType != "manual" {
 		return errors.New("event_type must be commit, push or manual")
 	}
-	if o.CloneID == "" && o.CommitSHA == "" && o.WorkflowPath == "" && o.EventID == "" && o.Branch == "" {
-		return nil
-	}
+	if o.CloneID == "" && o.CommitSHA == "" && o.WorkflowPath == "" && o.EventID == "" {
+        // Manual CLI executions may identify only the branch, so job filters
+        // work without inventing a clone ID or a commit SHA.
+        if o.EventType!="" && o.EventType!="manual" {return errors.New("partial origin may only be manual")}
+        if o.Branch!="" && !validBranch(o.Branch) {return errors.New("invalid branch")}
+        return nil
+    }
 	if o.CloneID == "" || !safeSHA.MatchString(o.CommitSHA) || !validBranch(o.Branch) || o.WorkflowPath == "" || o.EventType == "" {
 		return errors.New("complete clone_id, 40-character commit_sha, branch, workflow_path and event_type are required")
 	}
@@ -112,6 +117,7 @@ type workflowV1 struct {
 	Version   int    `yaml:"version"`
 	Name      string `yaml:"name"`
 	VMProfile string `yaml:"vm_profile"`
+	MaxParallelJobs int `yaml:"max_parallel_jobs"`
 	Triggers  []struct {
 		Event    string   `yaml:"event"`
 		Branches []string `yaml:"branches"`
@@ -165,7 +171,7 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 	if err := parseStrictYAML(data, &w); err != nil {
 		return executionPlan{}, err
 	}
-	if w.Version != 1 || strings.TrimSpace(w.Name) == "" || !safeWorkflowName.MatchString(w.VMProfile) || len(w.Jobs) == 0 || len(w.Jobs) > 100 {
+	if w.Version != 1 || strings.TrimSpace(w.Name) == "" || !safeWorkflowName.MatchString(w.VMProfile) || len(w.Jobs) == 0 || len(w.Jobs) > 100 || w.MaxParallelJobs < 0 || w.MaxParallelJobs > 16 {
 		return executionPlan{}, errors.New("workflow requires version: 1, name, vm_profile and 1..100 jobs")
 	}
 	if o.WorkflowName != "" && o.WorkflowName != w.Name {
@@ -241,7 +247,8 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 			return executionPlan{}, err
 		}
 	}
-	p := executionPlan{Name: w.Name, Profile: w.VMProfile}
+	p := executionPlan{Name: w.Name, Profile: w.VMProfile, MaxParallelJobs: w.MaxParallelJobs}
+	if p.MaxParallelJobs == 0 { p.MaxParallelJobs = 1 } // Sequential default preserves prior behavior.
 	skipped := map[string]bool{}
 	for _, name := range order {
 		j := w.Jobs[name]
@@ -269,11 +276,17 @@ func parseGitMasterWorkflow(data []byte, o ActionOrigin) (executionPlan, error) 
 	return p, nil
 }
 func parseActionV1(data []byte) (executionPlan, error) {
-	m, err := parseManifest(data, "")
+    return parseActionV1WithMode(data,true)
+}
+
+// The preview and the executor share the exact job/command extraction.
+// Only the execution path checks that import files already exist.
+func parseActionV1WithMode(data []byte,checkImports bool) (executionPlan, error) {
+    m, err := parseManifestWithMode(data,"",checkImports)
 	if err != nil {
 		return executionPlan{}, err
 	}
-	p := executionPlan{Name: m.Action.Name, Profile: m.VM.Profile}
+	p := executionPlan{Name: m.Action.Name, Profile: m.VM.Profile, MaxParallelJobs: 1}
 	if len(m.Action.Imports) > 1 {
 		return executionPlan{}, errors.New("action-v1 supports only one authorized archive per run")
 	}

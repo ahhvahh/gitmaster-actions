@@ -1,0 +1,15 @@
+version: 1
+name: all-filtered
+vm_profile: ci-smoke
+jobs:
+  first:
+    branches:
+      include: [main]
+    steps:
+      - name: one
+        run: echo one
+  second:
+    needs: [first]
+    steps:
+      - name: blocked
+        run: echo blocked

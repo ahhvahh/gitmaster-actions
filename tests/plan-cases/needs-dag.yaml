@@ -1,0 +1,29 @@
+version: 1
+name: needs-dag
+vm_profile: ci-smoke
+max_parallel_jobs: 4
+jobs:
+  release:
+    needs: [package, verify]
+    steps:
+      - name: release
+        run: echo release
+  package:
+    needs: [build]
+    steps:
+      - name: package
+        run: echo package
+  verify:
+    needs: [build]
+    steps:
+      - name: verify
+        run: echo verify
+  build:
+    needs: [lint]
+    steps:
+      - name: build
+        run: echo build
+  lint:
+    steps:
+      - name: lint
+        run: echo lint

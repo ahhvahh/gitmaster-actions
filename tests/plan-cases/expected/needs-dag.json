@@ -1,0 +1,22 @@
+[
+  {
+    "job": "lint",
+    "command": "echo lint"
+  },
+  {
+    "job": "build",
+    "command": "echo build"
+  },
+  {
+    "job": "package",
+    "command": "echo package"
+  },
+  {
+    "job": "verify",
+    "command": "echo verify"
+  },
+  {
+    "job": "release",
+    "command": "echo release"
+  }
+]

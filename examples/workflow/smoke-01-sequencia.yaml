@@ -1,0 +1,25 @@
+# Testa tres comandos sequenciais no mesmo Job, com arquivo intermediario.
+version: 1
+name: smoke-sequencia
+vm_profile: ci-smoke
+max_parallel_jobs: 1
+jobs:
+  sequencia:
+    steps:
+      - name: Preparar arquivo
+        run: |
+          set -eu
+          mkdir -p .gm-smoke
+          printf 'primeiro\n' > .gm-smoke/etapa1.txt
+          printf 'SEQ_PREPARAR_OK\n'
+      - name: Ler resultado anterior
+        run: |
+          set -eu
+          test "$(cat .gm-smoke/etapa1.txt)" = primeiro
+          printf 'segundo\n' > .gm-smoke/etapa2.txt
+          printf 'SEQ_ETAPA2_OK\n'
+      - name: Verificar sequencia
+        run: |
+          set -eu
+          test "$(cat .gm-smoke/etapa2.txt)" = segundo
+          printf 'SEQ_FINAL_OK\n'

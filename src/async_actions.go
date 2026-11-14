@@ -2,6 +2,7 @@ package gitmasteractions
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -44,6 +45,7 @@ func forbiddenSnapshotPath(name string) bool {
 }
 
 func safeSnapshotArchive(file string) error {
+	if strings.HasSuffix(strings.ToLower(file), ".zip") { return safeZipSnapshot(file) }
 	fi, err := os.Lstat(file)
 	if err != nil {
 		return err
@@ -116,8 +118,8 @@ func (e *Engine) stageSnapshot(ctx context.Context, origin string) (string, stri
 	if origin == "" {
 		return "", "", nil
 	}
-	if !filepath.IsAbs(origin) || !strings.HasSuffix(strings.ToLower(origin), ".tar.gz") {
-		return "", "", errors.New("ArchivePath must be absolute .tar.gz")
+	if !filepath.IsAbs(origin) || !(strings.HasSuffix(strings.ToLower(origin), ".tar.gz") || strings.HasSuffix(strings.ToLower(origin), ".zip")) {
+		return "", "", errors.New("ArchivePath must be absolute .zip or .tar.gz")
 	}
 	fi, err := os.Lstat(origin)
 	if err != nil {
@@ -130,7 +132,9 @@ func (e *Engine) stageSnapshot(ctx context.Context, origin string) (string, stri
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", "", err
 	}
-	dest, err := os.CreateTemp(dir, "snapshot-*.tar.gz")
+	suffix := ".tar.gz"
+	if strings.HasSuffix(strings.ToLower(origin), ".zip") { suffix = ".zip" }
+	dest, err := os.CreateTemp(dir, "snapshot-*" + suffix)
 	if err != nil {
 		return "", "", err
 	}
@@ -414,170 +418,53 @@ func (e *Engine) runSubmittedAction(ctx context.Context, id string, plan executi
 			return err
 		}
 	}
-	jobs, err := e.ListJobs(ctx, id)
-	if err != nil {
-		return err
-	}
-	results := map[string]string{}
-	anyFailed := false
-	for i, j := range plan.Jobs {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		jobID := jobs[i].ID
-		if j.SkipReason != "" {
-			results[j.Name] = "skipped"
-			continue
-		}
-		blocked := false
-		for _, need := range j.Needs {
-			if results[need] != "succeeded" {
-				blocked = true
-				break
-			}
-		}
-		if blocked {
-			if err = e.setStatus(ctx, "jobs", jobID, "skipped", "dependency failed or skipped"); err != nil {
-				return err
-			}
-			if err = e.skipCommands(ctx, jobID, "skipped"); err != nil {
-				return err
-			}
-			results[j.Name] = "skipped"
-			anyFailed = true
-			continue
-		}
-		if err = e.setStatus(ctx, "jobs", jobID, "running", ""); err != nil {
-			return err
-		}
-		cmds, err := e.ListCommands(ctx, jobID)
-		if err != nil {
-			return err
-		}
-		jobCtx := ctx
-		jobCancel := func() {}
-		if j.TimeoutSeconds > 0 {
-			jobCtx, jobCancel = context.WithTimeout(ctx, time.Duration(j.TimeoutSeconds)*time.Second)
-		}
-		jobFailed := false
-		infrastructure := false
-		for k, c := range j.Commands {
-			if err = jobCtx.Err(); err != nil {
-				jobFailed = true
-				infrastructure = true
-				break
-			}
-			cid := cmds[k].ID
-			if err = e.setStatus(jobCtx, "commands", cid, "running", ""); err != nil {
-				jobFailed = true
-				infrastructure = true
-				break
-			}
-			dir := rt.Workspace()
-			if c.Directory != "" && c.Directory != "." {
-				dir = strings.TrimSuffix(dir, "/") + "/" + c.Directory
-			}
-			writer := NewOutputWriter(func(stream, line string) error {
-				if stream == "system" {
-					stream = "stdout"
-				}
-				// Preserve complete lines; redact known credential patterns.
-				if len(line) > 4<<20 {
-					return errors.New("command line exceeds 4 MiB capture limit")
-				}
-                outputCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
-                defer done()
-                return e.appendOutput(outputCtx, cid, stream, []byte(redactActionText(line)+"\n"))
-			})
-			exit, runErr := rt.Command(jobCtx, vmID, dir, c.Run, writer)
-			runErr = errors.Join(runErr, writer.Flush())
-			code := any(nil)
-			if exit >= 0 {
-				code = exit
-			}
-			failure := ""
-			if runErr != nil || exit != 0 {
-				failure = "remote_exit"
-				if exit < 0 || errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
-					failure = "infrastructure"
-				}
-				if runErr == nil {
-					runErr = fmt.Errorf("remote command exit code %d", exit)
-				}
-			}
-			detail := ""
-			if runErr != nil {
-				detail = redactActionText(runErr.Error())
-			}
-			saveCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
-			_, saveErr := e.db.ExecContext(saveCtx, `UPDATE commands SET exit_code=?,failure_kind=? WHERE id=?`, code, nullableString(failure), cid)
-			if saveErr == nil {
-				status := "succeeded"
-				if failure != "" {
-					status = "failed"
-				}
-				saveErr = e.setStatus(saveCtx, "commands", cid, status, detail)
-			}
-			if saveErr == nil {
-				saveErr = e.addEvent(saveCtx, id, "command", fmt.Sprintf("job=%s step=%d status=%s exit=%d", j.Name, k, func() string {
-					if failure != "" {
-						return "failed"
-					}
-					return "succeeded"
-				}(), exit))
-			}
-			done()
-			if saveErr != nil {
-				jobCancel()
-				return fmt.Errorf("persist command result: %w", saveErr)
-			}
-			if failure != "" {
-				if failure == "infrastructure" {
-					infrastructure = true
-				}
-				if !j.AllowFailure || infrastructure {
-					jobFailed = true
-					break
-				}
-			}
-		}
-		if jobCtx.Err() != nil {
-            jobFailed = true
-            infrastructure = true
-        }
-		jobCancel()
-		status := "succeeded"
-		detail := ""
-		if jobFailed {
-			status = "failed"
-			detail = "job command failed"
-			anyFailed = true
-		}
-		saveCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
-		if err = e.setStatus(saveCtx, "jobs", jobID, status, detail); err == nil && jobFailed {
-			err = e.skipCommands(saveCtx, jobID, "skipped")
-		}
-		done()
-		if err != nil {
-			return err
-		}
-		results[j.Name] = status
-		if infrastructure {
-			// Preserve cancellation: a canceled VM command is not a generic infrastructure failure.
-			if cancelErr := ctx.Err(); cancelErr != nil {
-				return cancelErr
-			}
-			return fmt.Errorf("infrastructure failure in job %s", j.Name)
-		}
-	}
-	if anyFailed {
-		return errors.New("action has failed or skipped jobs")
-	}
-	return nil
+	return e.executePlannedJobs(ctx, id, plan, rt, vmID)
+
 }
 func nullableString(v string) any {
 	if v == "" {
 		return nil
 	}
 	return v
+}
+
+// safeZipSnapshot rejects zip-slip, symlinks, duplicate paths, credentials,
+// encrypted entries and excessive decompression before the file reaches a VM.
+func safeZipSnapshot(filename string) error {
+    info,err:=os.Lstat(filename)
+    if err!=nil{return err}
+    if !info.Mode().IsRegular()||info.Size()==0||info.Size()>100<<20 {
+        return errors.New("ZIP must be a regular archive <=100 MiB")
+    }
+    zr,err:=zip.OpenReader(filename)
+    if err!=nil{return fmt.Errorf("invalid ZIP: %w",err)}
+    defer zr.Close()
+    if len(zr.File)==0||len(zr.File)>20000{return errors.New("ZIP entry count must be 1..20000")}
+    seen:=make(map[string]bool,len(zr.File))
+    count:=0
+    var total uint64
+    for _,file:=range zr.File {
+        name:=strings.TrimSuffix(file.Name,"/")
+        if name==""||path.IsAbs(name)||strings.Contains(name,"\\")||
+           strings.ContainsRune(name,0)||path.Clean(name)!=name||
+           strings.HasPrefix(name,"../")||name==".."||seen[name] {
+            return fmt.Errorf("unsafe or duplicate ZIP path %q",name)
+        }
+        if forbiddenSnapshotPath(name){return fmt.Errorf("ZIP contains sensitive path %q",name)}
+        seen[name]=true
+        if file.Flags&0x1!=0{return fmt.Errorf("encrypted ZIP entry %q",name)}
+        if file.FileInfo().IsDir(){continue}
+        if !file.Mode().IsRegular(){return fmt.Errorf("ZIP entry is not a regular file %q",name)}
+        count++
+        total+=file.UncompressedSize64
+        if count>15000||total>256<<20{return errors.New("ZIP exceeds file/count limits")}
+        reader,err:=file.Open()
+        if err!=nil{return err}
+        n,copyErr:=io.Copy(io.Discard,io.LimitReader(reader,int64(file.UncompressedSize64)+1))
+        closeErr:=reader.Close()
+        if err:=errors.Join(copyErr,closeErr);err!=nil{return err}
+        if uint64(n)!=file.UncompressedSize64{return fmt.Errorf("ZIP size mismatch for %q",name)}
+    }
+    if count==0{return errors.New("ZIP has no regular files")}
+    return nil
 }

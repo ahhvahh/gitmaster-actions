@@ -1,0 +1,17 @@
+# Arquivo do servidor; nunca leia este YAML do ZIP de um repositório.
+profiles:
+  - name: ci-go
+    image_path: /var/lib/insulavm/frozen/debian13-ci.qcow2
+    memory_mib: 2048
+    vcpus: 2
+    workspace: /tmp/workspace
+  - name: ci-light
+    image_path: /var/lib/insulavm/frozen/debian13-light.qcow2
+    memory_mib: 1024
+    vcpus: 1
+    workspace: /tmp/workspace
+  - name: ci-smoke
+    image_path: /var/lib/insulavm/frozen/debian13-smoke.qcow2
+    memory_mib: 1024
+    vcpus: 2
+    workspace: /tmp/workspace

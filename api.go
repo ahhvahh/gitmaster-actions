@@ -20,6 +20,11 @@ type (
 	OutputWriter   = core.OutputWriter
 	GuestCommand   = core.GuestCommand
 	YAMLFormat     = core.YAMLFormat
+	CommandPair    = core.CommandPair
+	JobGraph       = core.JobGraph
+	GraphJob       = core.GraphJob
+	JobDecision    = core.JobDecision
+	ConvertOptions = core.ConvertOptions
 	ActionOrigin   = core.ActionOrigin
 	SubmitRequest  = core.SubmitRequest
 	RuntimeEvent   = core.RuntimeEvent
@@ -29,6 +34,8 @@ type (
 	VMImage        = core.VMImage
 	VMProfile      = core.VMProfile
 	ProfileRequest = core.ProfileRequest
+	ConfiguredVMProfile = core.ConfiguredVMProfile
+	VMProfilesConfig = core.VMProfilesConfig
 	LegacyRecord   = core.LegacyRecord
 )
 
@@ -38,8 +45,12 @@ const (
 )
 
 var (
+	ConvertYAML              = core.ConvertYAML
+	NewJobGraph              = core.NewJobGraph
 	New                      = core.New
 	NewRuntime               = core.NewRuntime
+	NewRuntimeWithProfiles   = core.NewRuntimeWithProfiles
+	LoadVMProfilesConfig     = core.LoadVMProfilesConfig
 	NewOutputWriter          = core.NewOutputWriter
 	NewGuestCommand          = core.NewGuestCommand
 	ImageFormat              = core.ImageFormat

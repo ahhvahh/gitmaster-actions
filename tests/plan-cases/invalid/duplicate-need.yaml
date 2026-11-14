@@ -1,0 +1,9 @@
+version: 1
+name: duplicate-need
+vm_profile: ci-smoke
+jobs:
+  first:
+    steps: [{name: step, run: "echo first"}]
+  second:
+    needs: [first, first]
+    steps: [{name: step, run: "echo second"}]

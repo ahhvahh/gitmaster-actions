@@ -1,0 +1,10 @@
+[
+  {
+    "job": "first",
+    "command": "echo one"
+  },
+  {
+    "job": "second",
+    "command": "echo blocked"
+  }
+]

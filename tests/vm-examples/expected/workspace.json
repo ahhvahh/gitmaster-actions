@@ -1,0 +1,34 @@
+{
+  "action_status": "succeeded",
+  "jobs": {
+    "ler_material": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "WORKSPACE_ARQUIVO_OK"
+        },
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "WORKSPACE_RAIZ_OK"
+        }
+      ]
+    },
+    "confirmar": {
+      "status": "succeeded",
+      "needs": [
+        "ler_material"
+      ],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "WORKSPACE_FINAL_OK"
+        }
+      ]
+    }
+  }
+}

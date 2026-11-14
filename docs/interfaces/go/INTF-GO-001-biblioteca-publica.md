@@ -11,6 +11,7 @@
 engine, err := gitmasteractions.New(gitmasteractions.Options{
     DatabasePath:     "/var/lib/gitmaster-actions/actions.db",
     InsulaConfigPath: "/etc/insulavm/config.yaml",
+    ProfilesConfigPath: "/etc/gitmaster-actions/profiles.yaml",
     Workers:          2,
 })
 if err != nil { return err }
@@ -53,3 +54,45 @@ Use `SubmitRequest.Format=FormatGitMasterV1` para YAML `version: 1` de `.gitmast
 ## Referências
 
 [Contrato de workflow](../../contratos/CONTR-003-gitmaster-workflow.md) · [Manifesto local](../../contratos/CONTR-001-configuracao-action.md) · [SQLite](../../persistencia/PERS-001-registro-execucoes.md) · [Guia](../../guias/GUIA-008-integracao-gitmaster.md)
+## Perfis congelados e snapshots ZIP
+
+`Options.ProfilesConfigPath` aponta um YAML confiável no servidor que declara um ou vários perfis (`name`, `image_path`, `memory_mib`, `vcpus`, `workspace`). `LoadVMProfilesConfig(path)` valida esse catálogo. `NewRuntimeWithProfiles(insulaConfig, profilesConfig)` inicia o adaptador. Ao selecionar um perfil ainda não registrado, o InsulaVM copia o QCOW2 para seu armazenamento gerenciado; imagens já registradas não são substituídas automaticamente.
+
+`SubmitRequest.ArchivePath` recebe o caminho **absoluto** do ZIP do repositório ou TAR.GZ legado. `ActionOrigin.Branch` habilita os filtros de branch. Os Jobs/Commands são persistidos antes de executar a VM. O workspace por perfil é usado na extração e na execução de cada comando. `DeployToVM` da InsulaVM recebe apenas TAR.GZ; para ZIP o adaptador usa `ImportToVM` e `ExecVM` para executar `unzip` no convidado. `unzip` deve existir na imagem congelada.
+
+## Conversor de YAML em pares Job/Command
+
+API **pura** `ConvertYAML(yamlData []byte, opts ConvertOptions) ([]CommandPair, error)` disponível no módulo raiz e em `/src`; não necessita `Engine`, SQLite, snapshot, InsulaVM nem credenciais.
+
+```go
+pairs, err := gitmasteractions.ConvertYAML(yamlBytes, gitmasteractions.ConvertOptions{
+  Format: gitmasteractions.FormatGitMasterV1,
+  Branch: "develop",
+  EventType: "manual",
+})
+// []CommandPair{ {Job: "job_develop", Command: "..."} }
+```
+
+`CommandPair` contém exclusivamente `Job string` e `Command string`, com propriedades JSON `job` e `command`. O formato deve ser indicado; `ConvertOptions.EventType` permite pré-validar gatilhos `commit`/`push` usando apenas a branch, sem uma origem Git completa. Em `action-v1`, não há filtros nem gatilhos, e a ordem original dos Jobs e Commands é mantida.
+
+O planejamento respeita `needs` e filtros, mas **não prevê o resultado de comandos que ainda não foram executados**. Para Jobs sem dependência, a ordem é determinística conforme o parser do executor; trabalhos paralelos poderão executar em outra ordem real. [CONTR-005](../../contratos/CONTR-005-conversor-yaml.md).
+
+## Grafo imutável de dependências Job → Job
+
+```go
+graph, err := gitmasteractions.NewJobGraph(yamlData, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1, Branch: "develop",
+})
+if err != nil { return err }
+needs, err := graph.Dependencies("build")       // dependências diretas
+dependents, err := graph.Dependents("lint")      // Jobs que dependem de lint
+independent, err := graph.HasDependencies("lint") // false se não houver needs
+transitive, err := graph.DependsOn("release", "lint")
+decision, err := graph.Decision("build", map[string]string{"lint": "succeeded"})
+ready, err := graph.ReadyJobs(map[string]string{"lint": "succeeded"})
+all, err := graph.Evaluate(map[string]string{"lint": "succeeded"})
+```
+
+`JobGraph.Jobs()` retorna a estrutura em ordem topológica determinística, com cópia das listas; nenhuma consulta altera o grafo. `Decision` considera status persistidos (`pending`, `running`, `succeeded`, `failed`, `skipped`, `cancelled`; ausente = `pending`), filtros de branch e `needs`; `CanRun` só é verdadeiro quando o Job está pendente, permitido pela branch, e todas as dependências estão `succeeded`. Outros estados são explicitamente `waiting`, `blocked`, `skipped` ou o próprio status corrente. A execução real usa o mesmo motor para decidir a prontidão.
+
+Referência: [CONTR-006](../../contratos/CONTR-006-grafo-dependencias-jobs.md).
