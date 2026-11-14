@@ -94,3 +94,16 @@ Use o [YAML com 10 Jobs](examples/workflow/dependency-parallel-smoke.yaml), o [c
 ### Teste isolado: um Job executa e outro não, conforme a branch
 
 Use o [workflow mínimo com dois Jobs](examples/workflow/branch-filter-smoke.yaml): em `develop`, somente `job_develop` executa, e `job_main` é persistido como `skipped` (`branch_filter`); em `main`, ocorre o inverso. Os testes Go ([`TestBranchFilterSmokeExecutesOnlyMatchingJob`](src/branch_filter_smoke_test.go)) verificam os dois cenários com runtime simulado, incluindo comandos, código de saída, logs e ausência de chamadas para o Job filtrado. Para ensaio com VM real, rode `bash scripts/tests/workflow-branch-filter-smoke.sh /etc/insulavm/config.yaml /etc/gitmaster-actions/profiles.yaml`: o script prepara um ZIP mínimo, testa as duas branches pela CLI e verifica o JSON persistido.
+
+## Rotina consolidada de testes em `/tests`
+
+O novo ponto de entrada é [tests/README.md](tests/README.md), com todos os resultados de trabalho (binário, ZIP, SQLite, JSON e logs) sob `tests/`.
+
+```bash
+bash tests/build.sh                # gera tests/bin/gitmaster-actions
+bash tests/run.sh                  # compila e testa unidade/race/vet, sem VM
+bash tests/run.sh --mode vm --case branch --insula-config /etc/insulavm/config.yaml --profiles-config /etc/gitmaster-actions/profiles.yaml
+bash tests/run.sh --mode vm --case parallel --insula-config /etc/insulavm/config.yaml --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+Os scripts antigos em `scripts/` permanecem operacionais. A execução real exige KVM, Libvirt e o perfil QCOW2 `ci-smoke`.

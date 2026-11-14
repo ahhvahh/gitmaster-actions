@@ -27,8 +27,6 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
       - name: Unit tests, race detector and static analysis
-        run: bash scripts/test-unit.sh
-      - name: Compile CLI binary to requested destination
-        run: |
-          bash scripts/build.sh --output "$RUNNER_TEMP/gitmaster-actions"
-          test -x "$RUNNER_TEMP/gitmaster-actions"
+        run: bash tests/run.sh --mode unit
+      - name: Confirm project-named binary
+        run: test -x tests/bin/gitmaster-actions

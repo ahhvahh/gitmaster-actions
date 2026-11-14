@@ -82,3 +82,13 @@ bash scripts/tests/workflow-parallel-smoke.sh \
 **Resultado esperado (branch `teste-falha`):** `falha_intencional` como `failed` com exit code 17; `bloqueado_por_falha` como `skipped` com motivo `dependency_not_succeeded:falha_intencional`; os dois caminhos paralelos e o Job final devem concluir normalmente; a Action inteira termina `failed` como previsto.
 
 O script executa a CLI com `--details`, confere os estados persistidos e trata a falha planejada como sucesso do **teste** (a Action de falha, porém, permanece `failed`). Requer `go`, `zip`, um host KVM/Libvirt funcional e um perfil `ci-smoke` apto a SSH/Cloud-Init.
+
+### Execução consolidada via `/tests`
+
+```bash
+bash tests/run.sh --mode vm --case all \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+O comando compila `tests/bin/gitmaster-actions`, prepara o ZIP de trabalho, verifica os dois Jobs por filtro de branch e a sequência de Jobs dependentes/paralelos, preservando os resultados em `tests/work/`. [Guia de testes](../../tests/README.md).
