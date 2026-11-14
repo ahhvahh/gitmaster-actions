@@ -1,0 +1,11 @@
+schema_version: 1
+vm:
+  profile: ci-smoke
+action:
+  name: missing-import
+  imports:
+    - source: ./snapshot-not-present.zip
+  jobs:
+    - name: local
+      commands:
+        - echo does-not-open-archive

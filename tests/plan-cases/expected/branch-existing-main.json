@@ -1,0 +1,6 @@
+[
+  {
+    "job": "job_main",
+    "command": "printf 'JOB_MAIN_EXECUTADO\\n'\n"
+  }
+]

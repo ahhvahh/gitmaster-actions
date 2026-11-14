@@ -1,0 +1,14 @@
+version: 1
+name: simple-map
+vm_profile: ci-smoke
+jobs:
+  zeta:
+    steps:
+      - name: one
+        run: echo z1
+      - name: two
+        run: echo z2
+  alpha:
+    steps:
+      - name: first
+        run: echo a1

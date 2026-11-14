@@ -1,0 +1,17 @@
+# id	format	branch	event	yaml	json
+simple-map	gitmaster-workflow-v1	-	manual	tests/plan-cases/simple-map.yaml	tests/plan-cases/expected/simple-map.json
+needs-dag	gitmaster-workflow-v1	-	manual	tests/plan-cases/needs-dag.yaml	tests/plan-cases/expected/needs-dag.json
+branches-develop	gitmaster-workflow-v1	develop	manual	tests/plan-cases/branches.yaml	tests/plan-cases/expected/branches-develop.json
+branches-main	gitmaster-workflow-v1	main	manual	tests/plan-cases/branches.yaml	tests/plan-cases/expected/branches-main.json
+branches-feature	gitmaster-workflow-v1	feature/a	manual	tests/plan-cases/branches.yaml	tests/plan-cases/expected/branches-feature.json
+all-filtered	gitmaster-workflow-v1	develop	manual	tests/plan-cases/all-filtered.yaml	tests/plan-cases/expected/all-filtered.json
+all-filtered-main	gitmaster-workflow-v1	main	manual	tests/plan-cases/all-filtered.yaml	tests/plan-cases/expected/all-filtered-main.json
+triggers-commit	gitmaster-workflow-v1	develop	commit	tests/plan-cases/triggers.yaml	tests/plan-cases/expected/triggers-commit.json
+triggers-push	gitmaster-workflow-v1	main	push	tests/plan-cases/triggers.yaml	tests/plan-cases/expected/triggers-push.json
+aliases	gitmaster-workflow-v1	-	manual	tests/plan-cases/aliases.yaml	tests/plan-cases/expected/aliases.json
+legacy	action-v1	-	manual	tests/plan-cases/legacy.yaml	tests/plan-cases/expected/legacy.json
+legacy-missing-import	action-v1	-	manual	tests/plan-cases/legacy-missing-import.yaml	tests/plan-cases/expected/legacy-missing-import.json
+block-steps	gitmaster-workflow-v1	-	manual	tests/plan-cases/block-steps.yaml	tests/plan-cases/expected/block-steps.json
+inline-map	gitmaster-workflow-v1	-	manual	tests/plan-cases/inline-map.yaml	tests/plan-cases/expected/inline-map.json
+branch-existing-develop	gitmaster-workflow-v1	develop	manual	examples/workflow/branch-filter-smoke.yaml	tests/plan-cases/expected/branch-existing-develop.json
+branch-existing-main	gitmaster-workflow-v1	main	manual	examples/workflow/branch-filter-smoke.yaml	tests/plan-cases/expected/branch-existing-main.json

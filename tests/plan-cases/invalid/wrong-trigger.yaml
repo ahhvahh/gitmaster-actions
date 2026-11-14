@@ -1,0 +1,9 @@
+version: 1
+name: wrong-trigger
+vm_profile: ci-smoke
+triggers:
+  - event: commit
+    branches: [develop]
+jobs:
+  first:
+    steps: [{name: step, run: "echo first"}]
