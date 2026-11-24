@@ -1,0 +1,8 @@
+version: 1
+name: duplicate-map-key
+vm_profile: ci-smoke
+jobs:
+  first:
+    steps: [{name: step, run: "echo 1"}]
+  first:
+    steps: [{name: step, run: "echo 2"}]

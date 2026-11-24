@@ -1,0 +1,18 @@
+# id	format	branch	event	yaml	error_contains
+cycle	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/cycle.yaml	cyclic needs
+unknown-need	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/unknown-need.yaml	unknown need
+duplicate-need	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/duplicate-need.yaml	duplicate/self need
+self-need	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/self-need.yaml	duplicate/self need
+unknown-field	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/unknown-field.yaml	field unsupported not found
+invalid-directory	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/invalid-directory.yaml	unsafe working_directory
+no-branch	gitmaster-workflow-v1	-	manual	tests/plan-cases/invalid/no-branch.yaml	branch required
+invalid-version	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/invalid-version.yaml	workflow requires version
+unsupported-max-parallel	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/unsupported-max-parallel.yaml	workflow requires version
+wrong-trigger	gitmaster-workflow-v1	main	commit	tests/plan-cases/invalid/wrong-trigger.yaml	workflow trigger does not match
+duplicate-jobs-legacy	action-v1	-	manual	tests/plan-cases/invalid/duplicate-jobs-legacy.yaml	invalid or repeated job
+duplicate-map-key	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/duplicate-map-key.yaml	already defined
+invalid-event	gitmaster-workflow-v1	develop	delete	tests/plan-cases/invalid/invalid-event.yaml	event_type must be
+unsupported-format	other-version	-	manual	tests/plan-cases/invalid/unsupported-format.yaml	unsupported YAML format
+legacy-with-branch	action-v1	develop	manual	tests/plan-cases/invalid/legacy-with-branch.yaml	action-v1 has no branch filters
+no-step	gitmaster-workflow-v1	develop	manual	tests/plan-cases/invalid/no-step.yaml	invalid job
+legacy-import-extension	action-v1	-	manual	tests/plan-cases/invalid/legacy-import-extension.yaml	imports must be

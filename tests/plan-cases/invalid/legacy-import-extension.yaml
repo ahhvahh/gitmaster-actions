@@ -1,0 +1,6 @@
+schema_version: 1
+vm: {profile: ci-smoke}
+action:
+  name: invalid-extension
+  imports: [{source: /does/not/exist.txt}]
+  jobs: [{name: one, commands: ["echo one"]}]

@@ -1,0 +1,14 @@
+schema_version: 1
+vm:
+  profile: ci-smoke
+action:
+  name: legacy
+  jobs:
+    - name: zeta
+      commands:
+        - echo zeta1
+        - echo zeta2
+      allow_failure: false
+    - name: alpha
+      commands:
+        - echo alpha1

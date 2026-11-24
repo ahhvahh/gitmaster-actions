@@ -91,3 +91,16 @@ A criação dos scripts e compilação dos pacotes Go não significa que o teste
 - [Persistência](../persistencia/PERS-001-registro-execucoes.md)
 - [Validação Go 1.27](GUIA-009-validacao-go127.md)
 - [InsulaVM `CreateProfileFromISO`](https://github.com/ahhvahh/InsulaVM/blob/983c4a8b46c7ee1a2f7ebd3d45de41aa3589b397/insulavm/create_profile_iso.go)
+## Estrutura atual de testes em `/tests`
+
+Também estão disponíveis `tests/build.sh` e `tests/run.sh` para execução local consolidada. O build produz `tests/bin/gitmaster-actions` e o runner mantém ZIP, bancos SQLite, JSON e logs em `tests/work/<execucao>/`.
+
+```bash
+bash tests/build.sh
+bash tests/run.sh --mode unit
+bash tests/run.sh --mode vm --case all \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+O CI executa `tests/run.sh --mode unit` sem KVM. `--mode vm` só funciona em host KVM/Libvirt autorizado; `--mode all` executa os dois conjuntos. O runner preserva evidências e não versiona arquivos binários ou bancos. Consulte [tests/README.md](../../tests/README.md).

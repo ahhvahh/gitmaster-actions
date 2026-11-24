@@ -1,0 +1,14 @@
+[
+  {
+    "job": "zeta",
+    "command": "echo zeta1"
+  },
+  {
+    "job": "zeta",
+    "command": "echo zeta2"
+  },
+  {
+    "job": "alpha",
+    "command": "echo alpha1"
+  }
+]

@@ -1,0 +1,7 @@
+schema_version: 1
+vm: {profile: ci-smoke}
+action:
+  name: duplicate-jobs
+  jobs:
+    - {name: test, commands: ["echo 1"]}
+    - {name: test, commands: ["echo 2"]}

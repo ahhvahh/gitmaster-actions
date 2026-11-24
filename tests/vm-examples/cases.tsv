@@ -1,0 +1,8 @@
+# case_id	branch	yaml_path	expected_json
+sequencia	develop	examples/workflow/smoke-01-sequencia.yaml	tests/vm-examples/expected/sequencia.json
+dependencias	develop	examples/workflow/smoke-02-dependencias.yaml	tests/vm-examples/expected/dependencias.json
+branches-develop	develop	examples/workflow/smoke-03-branches.yaml	tests/vm-examples/expected/branches-develop.json
+branches-main	main	examples/workflow/smoke-03-branches.yaml	tests/vm-examples/expected/branches-main.json
+branches-feature	feature/demo	examples/workflow/smoke-03-branches.yaml	tests/vm-examples/expected/branches-feature.json
+falha-intencional	develop	examples/workflow/smoke-04-falha.yaml	tests/vm-examples/expected/falha-intencional.json
+workspace	develop	examples/workflow/smoke-05-workspace.yaml	tests/vm-examples/expected/workspace.json

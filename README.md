@@ -2,7 +2,7 @@
 
 Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands no **SQLite próprio**, executa os comandos dentro de uma VM descartável pelo [InsulaVM](https://github.com/ahhvahh/InsulaVM), armazena saídas e acompanha cleanup e estados. O **GitMaster** permanece responsável por GitHub, clones, commits, SHA, snapshots e pushes.
 
-**Toolchain:** Go 1.27 (`go.mod`), CI Go 1.27.4. **InsulaVM fixado:** `983c4a8b46c7ee1a2f7ebd3d45de41aa3589b397`. Testes de unidade/race/vet com mocks não substituem validação autorizada em KVM/Libvirt.
+**Toolchain:** Go 1.27 (`go.mod`), CI Go 1.27.4. **InsulaVM/main fixado:** `1ced9ce8b5b8cdd4b52c903e7949dfd8c1fb3abf`. Testes de unidade/race/vet com mocks não substituem validação autorizada em KVM/Libvirt.
 
 ## Componentes
 
@@ -10,7 +10,7 @@ Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands n
 - `action-v1` (arquivo local/CLI) e `gitmaster-workflow-v1` (GitMaster) são formatos distintos e selecionados explicitamente.
 - `SubmitYAML` cria Action, Jobs e Commands **antes** de iniciar worker e VM. Jobs executam por dependência topológica; commands são sequenciais na mesma VM.
 - `RunFile` e `RunYAML` são wrappers **síncronos** do mesmo executor. Logs, VM ID, erros e cleanup usam o mesmo esquema de persistência.
-- Reenvio da mesma origem/evento só é idempotente com hashes idênticos de YAML e TAR.GZ; conteúdo divergente retorna conflito.
+- Reenvio da mesma origem/evento só é idempotente com hashes idênticos de YAML e snapshot `.zip` ou `.tar.gz`; conteúdo divergente retorna conflito.
 - `ImportLegacyHistory` importa o SQLite anterior em modo leitura, preserva dados tipados em `legacy_archive` **e normaliza** o grafo e suas saídas no banco independente. `GetLegacyActionID` resolve IDs antigos para a nova API.
 - `legacy.NewStore` permanece apenas como adaptador de compatibilidade para consumidores ainda não migrados; não deve ser usado em novas integrações.
 
@@ -20,6 +20,7 @@ Biblioteca Go que recebe YAML de Action, registra Action → Jobs → Commands n
 engine, err := gitmasteractions.New(gitmasteractions.Options{
     DatabasePath:     "/var/lib/gitmaster-actions/actions.db",
     InsulaConfigPath: "/etc/insulavm/config.yaml",
+    ProfilesConfigPath: "/etc/gitmaster-actions/profiles.yaml",
     Workers:          2,
 })
 if err != nil { return err }
@@ -33,7 +34,7 @@ action, err := engine.SubmitYAML(ctx, gitmasteractions.SubmitRequest{
         EventID: eventID, EventType: "commit",
         WorkflowName: "go-ci", WorkflowPath: ".gitmaster/workflow/go-ci.yaml",
     },
-    ArchivePath: "/srv/snapshots/commit.tar.gz",
+    ArchivePath: "/srv/snapshots/commit.zip",
 })
 if err != nil { return err }
 completed, err := engine.WaitAction(ctx, action.ID)
@@ -41,7 +42,24 @@ if err != nil { return err }
 if completed.Status != "succeeded" { return fmt.Errorf("action %s", completed.Status) }
 ```
 
-O consumidor deve ler o YAML da **árvore do SHA imutável** e fornecer TAR.GZ autorizado. A biblioteca valida o arquivo, cria cópia privada e registra seu SHA256; isso não substitui a política de exclusão de segredos do consumidor.
+O consumidor deve ler o YAML da **árvore do SHA imutável** e fornecer ZIP (ou TAR.GZ legado) autorizado. A biblioteca valida o arquivo, cria cópia privada e registra seu SHA256; isso não substitui a política de exclusão de segredos do consumidor.
+
+## Perfis QCOW2 e entrada por CLI
+
+O catálogo de perfis do **servidor** é `examples/insula/frozen-profiles.yaml` (um ou vários perfis). Cada entrada contém `name`, `image_path` absoluto para um QCOW2 congelado, `memory_mib`, `vcpus` e `workspace`, por exemplo `/tmp/workspace`. O workflow seleciona o perfil por `vm_profile`. O InsulaVM importa a imagem como perfil gerenciado na primeira utilização; cada Action inicia uma VM descartável. A imagem fonte permanece intacta. Perfis já registrados com configurações divergentes não são substituídos automaticamente.
+
+```bash
+gitmaster-actions run \
+  --db /var/lib/gitmaster-actions/actions.db \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml \
+  --format gitmaster-workflow-v1 \
+  --branch develop \
+  --file .gitmaster/workflow/go-ci.yaml \
+  --archive /srv/snapshots/repository.zip
+```
+
+O InsulaVM recebe o ZIP, o convidado executa `unzip` dentro do workspace configurado, e o executor persiste todos os Jobs, Commands, códigos de saída e logs no SQLite. **A imagem congelada precisa ter `unzip` instalado.** Veja [Contrato de perfis](docs/contratos/CONTR-004-perfis-congelados.md) e [Guia ZIP](docs/guias/GUIA-011-execucao-zip-vm.md).
 
 ## Testes
 
@@ -69,3 +87,96 @@ bash scripts/test-integration.sh --insula-config /etc/insulavm/config.yaml
 ```
 
 O CI executa os testes unitários em cada **push/PR**; o teste integral (ISO Debian 13, perfil 500 MiB/1 vCPU, três comandos, validação de logs e cleanup) requer host KVM autorizado e é explicitamente manual. Veja [GUIA-010](docs/guias/GUIA-010-build-testes.md).
+## Smoke test de dependências, skip e concorrência
+
+Use o [YAML com 10 Jobs](examples/workflow/dependency-parallel-smoke.yaml), o [catálogo com perfil ci-smoke](examples/insula/frozen-profiles.yaml) e o [script CLI com verificação de resultados](scripts/tests/workflow-parallel-smoke.sh). Com `--branch develop`, valida Jobs executados e omitidos; com `--branch teste-falha`, produz erro intencional exit 17 e deve pular o Job dependente. Instruções e saída esperada: [GUIA-011](docs/guias/GUIA-011-execucao-zip-vm.md). Não é necessário integrar GitMaster para executar esse ensaio de CLI.
+
+### Teste isolado: um Job executa e outro não, conforme a branch
+
+Use o [workflow mínimo com dois Jobs](examples/workflow/branch-filter-smoke.yaml): em `develop`, somente `job_develop` executa, e `job_main` é persistido como `skipped` (`branch_filter`); em `main`, ocorre o inverso. Os testes Go ([`TestBranchFilterSmokeExecutesOnlyMatchingJob`](src/branch_filter_smoke_test.go)) verificam os dois cenários com runtime simulado, incluindo comandos, código de saída, logs e ausência de chamadas para o Job filtrado. Para ensaio com VM real, rode `bash scripts/tests/workflow-branch-filter-smoke.sh /etc/insulavm/config.yaml /etc/gitmaster-actions/profiles.yaml`: o script prepara um ZIP mínimo, testa as duas branches pela CLI e verifica o JSON persistido.
+
+## Rotina consolidada de testes em `/tests`
+
+O novo ponto de entrada é [tests/README.md](tests/README.md), com todos os resultados de trabalho (binário, ZIP, SQLite, JSON e logs) sob `tests/`.
+
+```bash
+bash tests/build.sh                # gera tests/bin/gitmaster-actions
+bash tests/run.sh                  # compila e testa unidade/race/vet, sem VM
+bash tests/run.sh --mode vm --case branch --insula-config /etc/insulavm/config.yaml --profiles-config /etc/gitmaster-actions/profiles.yaml
+bash tests/run.sh --mode vm --case parallel --insula-config /etc/insulavm/config.yaml --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+Os scripts antigos em `scripts/` permanecem operacionais. A execução real exige KVM, Libvirt e o perfil QCOW2 `ci-smoke`.
+
+## Converter YAML → lista de comandos (sem VM)
+
+A API pública `ConvertYAML(yamlData, ConvertOptions)` interpreta os mesmos formatos de YAML do executor e retorna uma fatia de pares **exatamente com duas strings**, `job` e `command`. A conversão aplica filtros de branch, valida `needs` e mantém ordem topológica determinística dos Jobs e a ordem dos comandos dentro do Job; Jobs excluídos por branch ou dependência não entram no resultado. Não abre SQLite e não inicializa a InsulaVM.
+
+```go
+pairs, err := gitmasteractions.ConvertYAML(data, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1,
+    Branch: "develop",
+})
+// pairs: []gitmasteractions.CommandPair{{Job: "job_develop", Command: "..."}}
+```
+
+```bash
+bash tests/build.sh
+./tests/bin/gitmaster-actions plan --format gitmaster-workflow-v1 --branch develop --file examples/workflow/branch-filter-smoke.yaml
+bash tests/run.sh --mode plan  # verifica arquivo a arquivo os casos da matriz
+```
+
+É uma **previsão** determinística, não o histórico real de execução: Jobs paralelos não têm ordem de conclusão garantida e falhas futuras de comandos não podem ser antecipadas. A saída inclui apenas Jobs elegíveis, mesmo quando todos forem filtrados (lista vazia). O runtime continua recusando Action sem Jobs executáveis.
+
+Documentação e exemplos: [Converter](docs/contratos/CONTR-005-conversor-yaml.md) e [matriz de casos](tests/plan-cases/valid.tsv).
+
+## Consultar dependências e Jobs prontos para executar
+
+O objeto `NewJobGraph(yamlBytes, ConvertOptions)` monta um grafo acíclico com dependências diretas (`Needs`), Jobs dependentes (`Dependents`) e regras de branch (`SkipReason`). `JobGraph.Decision(job, statuses)` informa `CanRun`, `State`, `WaitingFor`, `BlockedBy` e `Reason`; `ReadyJobs(statuses)` retorna todos os Jobs elegíveis agora. Não usa banco nem VM.
+
+```go
+graph, err := gitmasteractions.NewJobGraph(data, gitmasteractions.ConvertOptions{
+    Format: gitmasteractions.FormatGitMasterV1, Branch: "develop",
+})
+if err != nil { return err }
+decision, err := graph.Decision("build", map[string]string{"lint": "succeeded"})
+// decision.CanRun == true: lint terminou com sucesso
+ready, err := graph.ReadyJobs(map[string]string{"lint": "succeeded"})
+```
+
+```bash
+bash tests/build.sh
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml
+./tests/bin/gitmaster-actions graph --file tests/plan-cases/needs-dag.yaml --statuses /tmp/job-statuses.json
+bash tests/run.sh --mode graph
+```
+
+Se `needs` estiver vazio, um Job **pendente e permitido na branch** está pronto. Se tiver dependências, todas precisam estar em `succeeded`; uma dependência pendente/ativa gera `waiting`, e uma dependência que falhou ou foi pulada gera `blocked` depois que as demais concluírem. O agendador real reutiliza a mesma decisão do grafo.
+
+[Contrato do grafo de Jobs](docs/contratos/CONTR-006-grafo-dependencias-jobs.md).
+
+## Exemplos executáveis para InsulaVM + persistência SQLite
+
+Foram adicionados **cinco workflows YAML** em [`examples/workflow/`](examples/workflow/) e um runner para **sete cenários**: sequência de comandos, dependências/convergência, filtros por `develop`/`main`/`feature/demo`, falha intencional que bloqueia dependentes e leitura do ZIP a partir de `working_directory`.
+
+```bash
+# Validação prévia dos YAMLs, sem KVM
+bash tests/run-vm-examples.sh --dry-run
+
+# Listar casos
+bash tests/run-vm-examples.sh --list
+
+# Executar um caso em InsulaVM real
+bash tests/run-vm-examples.sh --case sequencia \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+
+# Executar os sete casos, com verificação do SQLite e de logs
+bash tests/run-vm-examples.sh --case all \
+  --insula-config /etc/insulavm/config.yaml \
+  --profiles-config /etc/gitmaster-actions/profiles.yaml
+```
+
+O runner cria um ZIP fictício sem segredos e grava `actions.db`, `action.json`, `stderr.log`, `verify.log` e o código de saída da CLI por caso em `tests/work/vm-examples-*/`. O verificador confirma os Jobs, Commands, dependências, `skip_reason`, códigos de saída, integridade do banco, stdout persistido, linhas de log e desligamento da VM. Os testes KVM são **manuais**; o CI testa parser/contratos e módulos com runtime simulado.
+
+[Guia dos testes com VM](docs/guias/GUIA-012-testes-reais-insulavm.md).

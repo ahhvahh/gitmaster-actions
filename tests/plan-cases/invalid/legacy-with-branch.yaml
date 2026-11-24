@@ -1,0 +1,5 @@
+schema_version: 1
+vm: {profile: ci-smoke}
+action:
+  name: legacy-with-branch
+  jobs: [{name: one, commands: ["echo one"]}]

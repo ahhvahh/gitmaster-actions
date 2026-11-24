@@ -436,5 +436,5 @@ func (e *Engine) runtimeForActions() (Runtime, error) {
 	if strings.TrimSpace(e.options.InsulaConfigPath) == "" {
 		return nil, errors.New("InsulaConfigPath is required")
 	}
-	return NewRuntime(e.options.InsulaConfigPath, e.options.StartupScripts)
+	return NewRuntimeWithProfiles(e.options.InsulaConfigPath, e.options.ProfilesConfigPath, e.options.StartupScripts)
 }

@@ -1,0 +1,6 @@
+version: 2
+name: wrong-version
+vm_profile: ci-smoke
+jobs:
+  first:
+    steps: [{name: step, run: "echo first"}]

@@ -1,0 +1,44 @@
+# Um Job falha (exit 17); seu dependente nunca pode executar.
+# Jobs independentes continuam normalmente, e a Action deve terminar failed.
+version: 1
+name: smoke-falha
+vm_profile: ci-smoke
+max_parallel_jobs: 3
+jobs:
+  preparar:
+    steps:
+      - name: Preparar contexto
+        run: |
+          set -eu
+          mkdir -p .gm-smoke
+          printf 'pronto\n' > .gm-smoke/preparado.txt
+          printf 'FALHA_PREPARAR_OK\n'
+  falhar:
+    needs: [preparar]
+    steps:
+      - name: Falha intencional
+        run: |
+          set -eu
+          test -f .gm-smoke/preparado.txt
+          printf 'FALHA_INTENCIONAL_17\n'
+          exit 17
+  nao_executar:
+    needs: [falhar]
+    steps:
+      - name: Comando proibido
+        run: |
+          printf 'ERRO_JOB_BLOQUEADO_EXECUTOU\n'
+          exit 99
+  independente:
+    steps:
+      - name: Nao depende do Job com falha
+        run: |
+          set -eu
+          printf 'FALHA_INDEPENDENTE_OK\n'
+  finalizar_independente:
+    needs: [independente]
+    steps:
+      - name: Dependencia que concluiu
+        run: |
+          set -eu
+          printf 'FALHA_CAMINHO_INDEPENDENTE_OK\n'

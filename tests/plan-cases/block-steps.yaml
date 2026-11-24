@@ -1,0 +1,15 @@
+version: 1
+name: block-steps
+vm_profile: ci-smoke
+jobs:
+  multi:
+    steps:
+      - name: shell
+        working_directory: src/app
+        run: |
+          set -eu
+          echo first
+          echo second
+      - name: last
+        run: |
+          echo last

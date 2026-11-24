@@ -1,0 +1,107 @@
+# Workflow de validação manual e de biblioteca Go.
+# Para executar, selecione 'ci-smoke' no YAML administrativo dos perfis.
+# Branch develop: termina succeeded com skips por filtro e dependência.
+# Branch teste-falha: provoca erro exit 17 e skip de um dependente.
+version: 1
+name: dependency-parallel-smoke
+vm_profile: ci-smoke
+max_parallel_jobs: 4
+triggers:
+  - event: commit
+    branches: [develop, main, teste-falha]
+  - event: push
+    branches: [develop, main, teste-falha]
+jobs:
+  preparar:
+    steps:
+      - name: Preparar diretório dos resultados
+        run: |
+          set -eu
+          mkdir -p .smoke
+          printf 'iniciado\n' > .smoke/preparo.txt
+
+  paralelo_a:
+    needs: [preparar]
+    steps:
+      - name: Caminho A independente
+        run: |
+          set -eu
+          test -f .smoke/preparo.txt
+          sleep 1
+          printf 'A\n' > .smoke/a.txt
+
+  paralelo_b:
+    needs: [preparar]
+    steps:
+      - name: Caminho B independente
+        run: |
+          set -eu
+          test -f .smoke/preparo.txt
+          sleep 1
+          printf 'B\n' > .smoke/b.txt
+
+  unir_paralelos:
+    needs: [paralelo_a, paralelo_b]
+    steps:
+      - name: Verificar dois predecessores
+        run: |
+          set -eu
+          test "$(cat .smoke/a.txt)" = A
+          test "$(cat .smoke/b.txt)" = B
+          printf 'A+B\n' > .smoke/unidos.txt
+
+  somente_develop:
+    needs: [preparar]
+    branches:
+      include: [develop]
+    steps:
+      - name: Executar exclusivamente na develop
+        run: |
+          set -eu
+          printf 'develop\n' > .smoke/develop.txt
+
+  somente_main:
+    needs: [preparar]
+    branches:
+      include: [main]
+    steps:
+      - name: Executar exclusivamente na main
+        run: |
+          set -eu
+          printf 'main\n' > .smoke/main.txt
+
+  bloqueado_por_filtro:
+    needs: [somente_main]
+    steps:
+      - name: Não pode executar fora da main
+        run: |
+          set -eu
+          test -f .smoke/main.txt
+          printf 'dependencia main OK\n'
+
+  falha_intencional:
+    needs: [preparar]
+    branches:
+      include: [teste-falha]
+    steps:
+      - name: Falhar somente na branch de teste
+        run: |
+          echo "Falha planejada para testar o bloqueio"
+          exit 17
+
+  bloqueado_por_falha:
+    needs: [falha_intencional]
+    steps:
+      - name: Este comando NUNCA deve executar após a falha
+        run: |
+          echo "ERRO: a dependência não foi respeitada"
+          exit 99
+
+  finalizar:
+    needs: [unir_paralelos]
+    steps:
+      - name: Resultado da convergência
+        run: |
+          set -eu
+          test "$(cat .smoke/unidos.txt)" = A+B
+          printf 'finalizado\n' > .smoke/finalizado.txt

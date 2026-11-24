@@ -1,0 +1,13 @@
+version: 1
+name: triggers
+vm_profile: ci-smoke
+triggers:
+  - event: commit
+    branches: [develop]
+  - event: push
+    branches: [main]
+jobs:
+  test:
+    steps:
+      - name: run
+        run: echo test

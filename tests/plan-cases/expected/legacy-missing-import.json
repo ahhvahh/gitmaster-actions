@@ -1,0 +1,6 @@
+[
+  {
+    "job": "local",
+    "command": "echo does-not-open-archive"
+  }
+]

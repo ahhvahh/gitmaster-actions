@@ -1,0 +1,28 @@
+# Garante que o snapshot ZIP e working_directory sao respeitados.
+# Requer src/payload.txt no ZIP gerado pelo script de teste.
+version: 1
+name: smoke-workspace
+vm_profile: ci-smoke
+max_parallel_jobs: 1
+jobs:
+  ler_material:
+    steps:
+      - name: Executar dentro de src
+        working_directory: src
+        run: |
+          set -eu
+          test -f payload.txt
+          test "$(cat payload.txt)" = gitmaster-actions-example
+          printf 'WORKSPACE_ARQUIVO_OK\n'
+      - name: Verificar diretorio
+        run: |
+          set -eu
+          test -f src/payload.txt
+          printf 'WORKSPACE_RAIZ_OK\n'
+  confirmar:
+    needs: [ler_material]
+    steps:
+      - name: Finalizar teste de material
+        run: |
+          set -eu
+          printf 'WORKSPACE_FINAL_OK\n'

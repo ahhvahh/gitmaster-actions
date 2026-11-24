@@ -1,0 +1,14 @@
+[
+  {
+    "job": "main_job",
+    "command": "echo main"
+  },
+  {
+    "job": "after_main",
+    "command": "echo after_main"
+  },
+  {
+    "job": "shared",
+    "command": "echo shared"
+  }
+]

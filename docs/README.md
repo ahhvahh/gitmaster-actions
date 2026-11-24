@@ -21,3 +21,11 @@ Fontes canônicas, vinculadas ao código Go e aos testes. Os documentos em `migr
 | [ARQ-006 histórico](migracao/gitmaster/arquitetura/ARQ-006-adaptador-insulavm.md) | Material antigo mantido para auditoria |
 
 **Estado geral:** o pacote principal tem API assíncrona, SQLite independente e runtime InsulaVM via Go; o consumidor `GitMaster` antigo ainda necessita migração explícita. Testes KVM/Libvirt reais pendentes.
+- [CONTR-004 — Catálogo de perfis QCOW2 congelados](contratos/CONTR-004-perfis-congelados.md)
+- [GUIA-011 — Execução de workflow com ZIP na VM](guias/GUIA-011-execucao-zip-vm.md)
+
+- [CONTR-005 — Conversor YAML para lista Job/Command](contratos/CONTR-005-conversor-yaml.md)
+
+- [CONTR-006 — Grafo de dependências e avaliação de prontidão dos Jobs](contratos/CONTR-006-grafo-dependencias-jobs.md)
+
+- [GUIA-012 — Suite integral de YAMLs e validação SQLite na InsulaVM real](guias/GUIA-012-testes-reais-insulavm.md)

@@ -1,0 +1,10 @@
+[
+  {
+    "job": "one",
+    "command": "echo 1"
+  },
+  {
+    "job": "two",
+    "command": "echo 2"
+  }
+]

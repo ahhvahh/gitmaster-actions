@@ -1,0 +1,7 @@
+version: 1
+name: unknown
+vm_profile: ci-smoke
+jobs:
+  first:
+    unsupported: true
+    steps: [{name: step, run: "echo first"}]

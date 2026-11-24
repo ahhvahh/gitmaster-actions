@@ -1,0 +1,6 @@
+[
+  {
+    "job": "shared",
+    "command": "echo shared"
+  }
+]

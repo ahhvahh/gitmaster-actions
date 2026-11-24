@@ -1,0 +1,60 @@
+{
+  "action_status": "succeeded",
+  "jobs": {
+    "comum": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "BRANCH_COMUM_OK"
+        }
+      ]
+    },
+    "somente_develop": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "BRANCH_DEVELOP_OK"
+        }
+      ]
+    },
+    "somente_main": {
+      "status": "skipped",
+      "needs": [],
+      "commands": [
+        {
+          "status": "skipped"
+        }
+      ],
+      "skip_reason": "branch_filter"
+    },
+    "somente_develop_por_exclusao": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "BRANCH_EXCLUDE_OK"
+        }
+      ]
+    },
+    "dependente_main": {
+      "status": "skipped",
+      "needs": [
+        "somente_main"
+      ],
+      "commands": [
+        {
+          "status": "skipped"
+        }
+      ],
+      "skip_reason": "dependency_filtered:somente_main"
+    }
+  }
+}

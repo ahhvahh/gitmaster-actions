@@ -1,0 +1,66 @@
+{
+  "action_status": "failed",
+  "jobs": {
+    "preparar": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "FALHA_PREPARAR_OK"
+        }
+      ]
+    },
+    "falhar": {
+      "status": "failed",
+      "needs": [
+        "preparar"
+      ],
+      "commands": [
+        {
+          "status": "failed",
+          "exit_code": 17,
+          "failure_kind": "remote_exit",
+          "output_contains": "FALHA_INTENCIONAL_17"
+        }
+      ]
+    },
+    "nao_executar": {
+      "status": "skipped",
+      "needs": [
+        "falhar"
+      ],
+      "commands": [
+        {
+          "status": "skipped"
+        }
+      ],
+      "skip_reason": "dependency_not_succeeded:falhar"
+    },
+    "independente": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "FALHA_INDEPENDENTE_OK"
+        }
+      ]
+    },
+    "finalizar_independente": {
+      "status": "succeeded",
+      "needs": [
+        "independente"
+      ],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "FALHA_CAMINHO_INDEPENDENTE_OK"
+        }
+      ]
+    }
+  }
+}

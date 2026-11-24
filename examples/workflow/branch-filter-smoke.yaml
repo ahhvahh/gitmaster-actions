@@ -1,0 +1,30 @@
+# Teste mínimo de execução condicionada à branch.
+# develop: executa job_develop e IGNORA job_main.
+# main: executa job_main e IGNORA job_develop.
+version: 1
+name: branch-filter-smoke
+vm_profile: ci-smoke
+max_parallel_jobs: 2
+
+triggers:
+  - event: commit
+    branches: [develop, main]
+  - event: push
+    branches: [develop, main]
+
+jobs:
+  job_develop:
+    branches:
+      include: [develop]
+    steps:
+      - name: Executar apenas em develop
+        run: |
+          printf 'JOB_DEVELOP_EXECUTADO\n'
+
+  job_main:
+    branches:
+      include: [main]
+    steps:
+      - name: Executar apenas em main
+        run: |
+          printf 'JOB_MAIN_EXECUTADO\n'

@@ -1,0 +1,10 @@
+[
+  {
+    "job": "multi",
+    "command": "set -eu\necho first\necho second\n"
+  },
+  {
+    "job": "multi",
+    "command": "echo last\n"
+  }
+]

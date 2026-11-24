@@ -1,0 +1,14 @@
+[
+  {
+    "job": "restricted",
+    "command": "echo develop"
+  },
+  {
+    "job": "after_restricted",
+    "command": "echo after_develop"
+  },
+  {
+    "job": "shared",
+    "command": "echo shared"
+  }
+]

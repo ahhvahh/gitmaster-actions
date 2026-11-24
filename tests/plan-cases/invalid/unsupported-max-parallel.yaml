@@ -1,0 +1,7 @@
+version: 1
+name: too-many
+vm_profile: ci-smoke
+max_parallel_jobs: 17
+jobs:
+  first:
+    steps: [{name: step, run: "echo first"}]

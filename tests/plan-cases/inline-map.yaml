@@ -1,0 +1,4 @@
+version: 1
+name: inline-map
+vm_profile: ci-smoke
+jobs: {one: {steps: [{name: run, run: "echo 1"}]}, two: {needs: [one], steps: [{name: run, run: "echo 2"}]}}

@@ -1,0 +1,7 @@
+version: 1
+name: unknown-need
+vm_profile: ci-smoke
+jobs:
+  first:
+    needs: [not_found]
+    steps: [{name: step, run: "echo one"}]

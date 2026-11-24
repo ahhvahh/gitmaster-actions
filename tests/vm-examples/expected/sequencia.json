@@ -1,0 +1,26 @@
+{
+  "action_status": "succeeded",
+  "jobs": {
+    "sequencia": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "SEQ_PREPARAR_OK"
+        },
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "SEQ_ETAPA2_OK"
+        },
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "SEQ_FINAL_OK"
+        }
+      ]
+    }
+  }
+}

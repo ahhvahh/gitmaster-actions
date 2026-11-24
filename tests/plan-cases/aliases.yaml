@@ -1,0 +1,10 @@
+version: 1
+name: aliases
+vm_profile: ci-smoke
+jobs:
+  zeta:
+    steps: &steps
+      - name: first
+        run: "echo identical"
+  alpha:
+    steps: *steps

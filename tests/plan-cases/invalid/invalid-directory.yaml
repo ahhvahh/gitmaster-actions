@@ -1,0 +1,6 @@
+version: 1
+name: invalid-directory
+vm_profile: ci-smoke
+jobs:
+  first:
+    steps: [{name: step, working_directory: "../escape", run: "echo first"}]

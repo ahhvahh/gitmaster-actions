@@ -1,0 +1,45 @@
+# Testa include, exclude, Job comum e bloqueio por dependente filtrado.
+# Branches testadas: develop, main e feature/demo.
+version: 1
+name: smoke-branches
+vm_profile: ci-smoke
+max_parallel_jobs: 3
+jobs:
+  comum:
+    steps:
+      - name: Sempre executar
+        run: |
+          set -eu
+          printf 'BRANCH_COMUM_OK\n'
+  somente_develop:
+    branches:
+      include: [develop]
+    steps:
+      - name: Somente develop
+        run: |
+          set -eu
+          printf 'BRANCH_DEVELOP_OK\n'
+  somente_main:
+    branches:
+      include: [main]
+    steps:
+      - name: Somente main
+        run: |
+          set -eu
+          printf 'BRANCH_MAIN_OK\n'
+  somente_develop_por_exclusao:
+    branches:
+      include: [develop, main]
+      exclude: [main]
+    steps:
+      - name: Exclude tem precedencia
+        run: |
+          set -eu
+          printf 'BRANCH_EXCLUDE_OK\n'
+  dependente_main:
+    needs: [somente_main]
+    steps:
+      - name: Depende do Job habilitado em main
+        run: |
+          set -eu
+          printf 'BRANCH_DEPENDENTE_MAIN_OK\n'

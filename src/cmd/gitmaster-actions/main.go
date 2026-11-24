@@ -10,6 +10,7 @@ import (
     "os"
     "os/signal"
     "syscall"
+    "time"
 
     actions "github.com/ahhvahh/gitmaster-actions"
 )
@@ -21,13 +22,13 @@ func output(v any)error {
 }
 func run(args []string)error{
     if len(args)==0||args[0]=="--help"||args[0]=="help"{
-        fmt.Println("usage: gitmaster-actions run|actions|jobs|commands|logs|outputs|profiles [options]")
+        fmt.Println("usage: gitmaster-actions plan|graph|run|actions|jobs|commands|logs|outputs|profiles [options]")
         return nil
     }
     cmd:=args[0]
     sub:=""
     rest:=args[1:]
-    if cmd!="run" {
+    if cmd!="run" && cmd!="plan" && cmd!="graph" {
         if len(rest)==0{return errors.New("subcommand required")}
         sub=rest[0]
         rest=rest[1:]
@@ -36,6 +37,15 @@ func run(args []string)error{
     db:=f.String("db","actions.db","GitMaster Actions private SQLite")
     config:=f.String("insula-config","","InsulaVM administrator config")
     file:=f.String("file","","YAML manifest path")
+    defaultFormat:="action-v1"
+    if cmd=="plan" || cmd=="graph"{ defaultFormat="gitmaster-workflow-v1" }
+    format:=f.String("format",defaultFormat,"action-v1 or gitmaster-workflow-v1")
+    event:=f.String("event","manual","plan/graph: manual, commit or push for trigger checks")
+    statusesFile:=f.String("statuses","", "graph only: JSON map of job names to runtime statuses")
+    branch:=f.String("branch","","working branch for workflow filters")
+    archive:=f.String("archive","","absolute repository .zip or .tar.gz snapshot")
+    profilesConfig:=f.String("profiles-config","","administrator YAML catalog of frozen QCOW2 profiles")
+    details:=f.Bool("details",false,"print Action with Jobs, Commands, statuses and runtime events")
     stdin:=f.Bool("stdin",false,"read YAML from standard input")
     id:=f.String("id","","Action, Job or Command UUID")
     actionID:=f.String("action-id","","Action UUID")
@@ -55,6 +65,40 @@ func run(args []string)error{
     if len(f.Args())!=0{return errors.New("unexpected positional arguments")}
     ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM)
     defer stop()
+    if cmd=="plan" || cmd=="graph"{
+        // Planning and dependency inspection are pure: no Engine/SQLite/VM.
+        if (*file=="")==!*stdin{return errors.New("plan/graph requires exactly one --file or --stdin")}
+        if *archive!=""{return errors.New("plan/graph does not need --archive")}
+        var data []byte
+        var err error
+        if *stdin {
+            data,err=io.ReadAll(io.LimitReader(os.Stdin,(1<<20)+1))
+        } else {
+            data,err=os.ReadFile(*file)
+        }
+        if err!=nil{return err}
+        opts:=actions.ConvertOptions{
+            Format:actions.YAMLFormat(*format),Branch:*branch,EventType:*event,
+        }
+        if cmd=="plan"{
+            if *statusesFile!=""{return errors.New("--statuses is only valid for graph")}
+            rows,err:=actions.ConvertYAML(data,opts)
+            if err!=nil{return err}
+            return output(rows)
+        }
+        graph,err:=actions.NewJobGraph(data,opts)
+        if err!=nil{return err}
+        statuses:=map[string]string{}
+        if *statusesFile!=""{
+            data,err:=os.ReadFile(*statusesFile)
+            if err!=nil{return err}
+            if len(data)>1<<20{return errors.New("status JSON exceeds 1 MiB")}
+            if err=json.Unmarshal(data,&statuses);err!=nil{return fmt.Errorf("invalid --statuses JSON: %w",err)}
+        }
+        decisions,err:=graph.Evaluate(statuses)
+        if err!=nil{return err}
+        return output(decisions)
+    }
     if cmd=="profiles"{
         if *config==""{return errors.New("--insula-config is required")}
         switch sub{
@@ -77,23 +121,59 @@ func run(args []string)error{
         default:return errors.New("profiles: expected list, images or register")
         }
     }
-    engine,err:=actions.New(actions.Options{DatabasePath:*db,InsulaConfigPath:*config})
+    engine,err:=actions.New(actions.Options{DatabasePath:*db,InsulaConfigPath:*config,ProfilesConfigPath:*profilesConfig})
     if err!=nil{return err}
     defer engine.Close()
+    emitRun:=func(a *actions.Action)error{
+        if a==nil{return nil}
+        if *details {
+            full,err:=engine.GetActionDetails(context.Background(),a.ID)
+            if err!=nil{return err}
+            return output(full)
+        }
+        return output(a)
+    }
     switch cmd{
     case "run":
         if (*file=="")==!*stdin{return errors.New("run requires exactly one --file or --stdin")}
-        var a *actions.Action
-        if *stdin{
-            data,err:=io.ReadAll(io.LimitReader(os.Stdin,2<<20))
-            if err!=nil{return err}
-            a,err=engine.RunYAML(ctx,data)
-            if a!=nil{_ = output(a)}
+        if *format=="action-v1" {
+            if *archive!=""||*branch!=""{return errors.New("--archive and --branch require --format gitmaster-workflow-v1")}
+            var a *actions.Action
+            if *stdin{
+                data,err:=io.ReadAll(io.LimitReader(os.Stdin,2<<20))
+                if err!=nil{return err}
+                a,err=engine.RunYAML(ctx,data)
+                if a!=nil{_ = emitRun(a)}
+                return err
+            }
+            a,err=engine.RunFile(ctx,*file)
+            if a!=nil{_ = emitRun(a)}
             return err
         }
-        a,err=engine.RunFile(ctx,*file)
-        if a!=nil{_ = output(a)}
-        return err
+        if *format!="gitmaster-workflow-v1" {return errors.New("unsupported YAML format")}
+        if *branch==""||*archive==""{return errors.New("workflow execution requires --branch and --archive")}
+        var data []byte
+        var err error
+        if *stdin {data,err=io.ReadAll(io.LimitReader(os.Stdin,2<<20))} else {data,err=os.ReadFile(*file)}
+        if err!=nil{return err}
+        action,err:=engine.SubmitYAML(ctx,actions.SubmitRequest{
+            YAML:data,Format:actions.FormatGitMasterV1,
+            Origin:actions.ActionOrigin{Branch:*branch,EventType:"manual"},
+            ArchivePath:*archive,
+        })
+        if err!=nil{return err}
+        done,err:=engine.WaitAction(ctx,action.ID)
+        if err!=nil {
+            // A cancelled CLI must synchronously stop its VM before exit.
+            _=engine.CancelAction(context.Background(),action.ID)
+            cleanupCtx,cancel:=context.WithTimeout(context.Background(),75*time.Second)
+            _,_=engine.WaitAction(cleanupCtx,action.ID)
+            cancel()
+            return err
+        }
+        if err=emitRun(done);err!=nil{return err}
+        if done.Status!="succeeded"{return fmt.Errorf("action %s",done.Status)}
+        return nil
     case "actions":
         if sub=="list"{
             a,err:=engine.ListActions(ctx,actions.ActionFilter{},actions.Page{Limit:*limit})

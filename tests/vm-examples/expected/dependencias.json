@@ -1,0 +1,56 @@
+{
+  "action_status": "succeeded",
+  "jobs": {
+    "preparar": {
+      "status": "succeeded",
+      "needs": [],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "DAG_PREPARAR_OK"
+        }
+      ]
+    },
+    "compilar": {
+      "status": "succeeded",
+      "needs": [
+        "preparar"
+      ],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "DAG_BUILD_OK"
+        }
+      ]
+    },
+    "testar": {
+      "status": "succeeded",
+      "needs": [
+        "preparar"
+      ],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "DAG_TESTE_OK"
+        }
+      ]
+    },
+    "publicar": {
+      "status": "succeeded",
+      "needs": [
+        "compilar",
+        "testar"
+      ],
+      "commands": [
+        {
+          "status": "succeeded",
+          "exit_code": 0,
+          "output_contains": "DAG_CONVERGENCIA_OK"
+        }
+      ]
+    }
+  }
+}
